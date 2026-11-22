@@ -12,6 +12,12 @@
 
 **Genesis-Kinetics** is an experimental runtime for studying how injected policy-computation delays affect action execution in Genesis World simulation. It combines a synthetic action-chunk worker, asynchronous execution, trajectory alignment, fallback behaviour, and timestamped telemetry. The current experiments use a scripted manipulation task on Apple Silicon; they do not demonstrate learned-VLA task performance.
 
+<p align="center">
+  <img src="tabletop_cube_pick.gif" alt="Genesis-Kinetics 3D Tabletop Rollout in Genesis World" width="600" />
+  <br>
+  <em>Closed-loop Franka Emika Panda tabletop cube-pick rollout executed at 100 Hz in Genesis World 1.4.7 (Apple Metal backend).</em>
+</p>
+
 ---
 
 ## 1. Why This Runtime Exists
@@ -42,6 +48,10 @@ To ensure strict engineering transparency, the table below outlines what is curr
 | **Tensor Interoperability (`benchmark_dlpack_zerocopy.py`)** | In-Process DLPack Memory Sharing | Direct pointer sharing between Genesis C++/Metal memory structures and PyTorch tensors, eliminating intermediate NumPy copies. Tested in-process; not a cross-process transport. |
 | **Telemetry & Flight Recorder (`telemetry/`)** | Non-blocking UDS Binary Recorder | Microsecond `.tick` binary records streaming to disk via `/tmp/rtm.sock`, capturing timing stamps for ingest, simulated delay, queue handover, and joint torque dynamics. |
 | **Hardware Backends** | Tested on Apple Silicon Metal | Verified on macOS Apple Silicon Metal (`gs.metal`); architectural support for Linux CUDA (`gs.cuda`). |
+
+> [!TIP]
+> **Upstream Compiler Integration**:
+> Built on top of our upstream contribution to Genesis's compiler ([Genesis-Embodied-AI/quadrants#1141](https://github.com/Genesis-Embodied-AI/quadrants/pull/1141)), which eliminated device staging memory leaks and synchronized PyTorch streams during zero-copy DLPack ndarray transfers on unified memory architectures.
 
 ---
 
@@ -133,6 +143,10 @@ DLPack In-Process Pointer Sharing|         2.628 µs     |       0.00 MB   |    
 * **Measured Latency Reduction**: The microbenchmark measured tensor-handover overhead of 3.368 μs for the copy-based path and 2.628 μs for the DLPack path. The measured saving was 0.740 μs per operation.
 * **Scope of Measurement**: The reported copying avoided is an architectural property of direct pointer projection; it is not a direct measurement of Python allocation volume, garbage-collection pauses, or end-to-end control performance.
 * **Budget Context**: At 100 Hz (10,000 μs loop deadline), in-process tensor handover consumes less than 0.03% of the control loop budget.
+
+> [!TIP]
+> **Upstream Compiler Contribution ([quadrants#1141](https://github.com/Genesis-Embodied-AI/quadrants/pull/1141))**:
+> The zero-copy DLPack pointer sharing tested here relies on the upstream stream synchronization and device memory leak fix contributed directly to Genesis's Quadrants JIT compiler.
 
 ---
 
@@ -226,7 +240,8 @@ Genesis_AI/
 │   ├── test_vla_core.py             # Unit tests for ring buffer, ensembling, damping & Genesis
 │   ├── test_telemetry.py            # Socket streaming & .tick binary parsing tests
 │   └── test_disaggregated_serving.py # Chunked prefill & action head unit tests
-├── tabletop_cube_pick.mp4            # Rendered 3D visual rollout video (1.1 MB)
+├── tabletop_cube_pick.gif           # Animated rollout demonstration for instant preview (818 KB)
+├── tabletop_cube_pick.mp4           # Rendered 3D visual rollout video (1.1 MB)
 ├── README.md                        # Rigorous systems documentation & disclosures
 └── .gitignore                       # Clean Git tracking configuration
 ```
