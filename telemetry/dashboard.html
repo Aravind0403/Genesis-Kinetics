@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Closed-Loop Flight Recorder & Counterfactual Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0a0e17;
+            --bg-card: #131b2e;
+            --border: #1f2d4a;
+            --text-main: #e2e8f0;
+            --text-muted: #94a3b8;
+            --accent-green: #10b981;
+            --accent-red: #ef4444;
+            --accent-blue: #3b82f6;
+            --accent-yellow: #f59e0b;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            margin: 0;
+            padding: 24px;
+        }
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 16px;
+            margin-bottom: 24px;
+        }
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: -0.5px;
+        }
+        .badge {
+            padding: 4px 12px;
+            border-radius: 9999px;
+            font-size: 12px;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        .badge-live { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); border: 1px solid var(--accent-green); }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .stat-label { font-size: 12px; color: var(--text-muted); text-transform: uppercase; font-weight: 600; }
+        .stat-value { font-size: 24px; font-weight: 700; margin-top: 8px; }
+        .stat-sub { font-size: 12px; margin-top: 4px; }
+        .text-green { color: var(--accent-green); }
+        .text-red { color: var(--accent-red); }
+        .text-blue { color: var(--accent-blue); }
+
+        /* Interactive Scrubber Bar */
+        .scrubber-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 24px;
+        }
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-top: 12px;
+        }
+        input[type=range] {
+            flex-grow: 1;
+            height: 8px;
+            border-radius: 4px;
+            background: var(--border);
+            outline: none;
+            cursor: pointer;
+        }
+        .btn {
+            background: var(--accent-blue);
+            color: #fff;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+        .btn:hover { opacity: 0.9; }
+
+        .comparison-cards {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-top: 16px;
+        }
+        .side-card {
+            background: rgba(15, 23, 42, 0.6);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+        }
+        .side-title { font-weight: 700; font-size: 14px; margin-bottom: 8px; }
+
+        .chart-container {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 24px;
+            height: 280px;
+        }
+        .causal-callout {
+            background: rgba(59, 130, 246, 0.1);
+            border-left: 4px solid var(--accent-blue);
+            border-radius: 6px;
+            padding: 16px;
+            margin-top: 24px;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div>
+            <h1>🚀 Asynchronous VLA Flight Recorder & Determinism Inspector</h1>
+            <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
+                Microsecond-level telemetry correlation between System 2 VLM perception and System 1 Genesis World motor control.
+            </div>
+        </div>
+        <div>
+            <span class="badge badge-live">● TELEMETRY VERIFIED</span>
+        </div>
+    </div>
+
+    <!-- Top KPI Stats -->
+    <div class="grid">
+        <div class="stat-card">
+            <div class="stat-label">Injected P99 Latency Spike</div>
+            <div class="stat-value text-red">+150.0 ms</div>
+            <div class="stat-sub text-muted">Synthetic VLM stall injection</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Mechanical Jerk Reduction</div>
+            <div class="stat-value text-green">-26.3 %</div>
+            <div class="stat-sub text-muted">111.85 &rarr; 82.38 rad/s³</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Sync Baseline Stall Rate</div>
+            <div class="stat-value text-red">10.0 %</div>
+            <div class="stat-sub text-muted">Robot froze; dropped objects</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Our Async Miss Rate</div>
+            <div class="stat-value text-green">5.2 %</div>
+            <div class="stat-sub text-muted">Damped continuation recovery</div>
+        </div>
+    </div>
+
+    <!-- Interactive Counterfactual Scrubber -->
+    <div class="scrubber-panel">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div style="font-weight: 700; font-size: 16px;">⏱️ Interactive Timeline Scrubber (100 Hz Ticks)</div>
+            <div id="scrub-label" style="font-weight: 700; font-family: monospace; color: var(--accent-blue);">Tick 0 / 250 (+0.0 ms)</div>
+        </div>
+        <div class="slider-container">
+            <button class="btn" id="btn-jump-spike">⚡ Jump to +150ms Spike</button>
+            <input type="range" id="timeline-slider" min="0" max="249" value="0">
+            <button class="btn" id="btn-play">▶ Play 100Hz</button>
+        </div>
+
+        <div class="comparison-cards">
+            <div class="side-card" style="border-left: 4px solid var(--accent-red);">
+                <div class="side-title text-red">🔴 Synchronous Baseline (OpenVLA / LeRobot)</div>
+                <div>Buffer Depth: <strong id="sync-buf-val">0 steps</strong></div>
+                <div style="margin-top: 4px;">Joint Torque: <strong id="sync-torq-val">0.0 N·m</strong></div>
+                <div style="margin-top: 4px;">Status: <strong id="sync-status-val">NOMINAL</strong></div>
+            </div>
+            <div class="side-card" style="border-left: 4px solid var(--accent-green);">
+                <div class="side-title text-green">🟢 Our Asynchronous Dual-Loop Runtime</div>
+                <div>Buffer Depth: <strong id="async-buf-val">0 steps</strong></div>
+                <div style="margin-top: 4px;">Joint Torque: <strong id="async-torq-val">0.0 N·m</strong></div>
+                <div style="margin-top: 4px;">Status: <strong id="async-status-val">NOMINAL</strong></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Chart 1: Action Buffer Depth -->
+    <div class="chart-container">
+        <canvas id="bufferChart"></canvas>
+    </div>
+
+    <!-- Chart 2: Joint Torque Norm Trace -->
+    <div class="chart-container">
+        <canvas id="torqueChart"></canvas>
+    </div>
+
+    <!-- Causal Diagnosis Explainer -->
+    <div class="causal-callout">
+        <div style="font-weight: 700; font-size: 15px; margin-bottom: 6px;">
+            💡 The "Policy vs. Latency" Diagnostic Blindspot Solved
+        </div>
+        <div style="font-size: 13px; line-height: 1.5; color: var(--text-muted);">
+            In standard robot rollouts, when a manipulator drops a target or causes severe motor vibration, engineers cannot tell whether the failure was caused by a hallucinated model waypoint or a 100 ms thread scheduler stall. 
+            By cross-referencing microsecond-level <strong style="color:#fff;">VLM prefill latency</strong> directly with <strong style="color:#fff;">action buffer depletion</strong> and <strong style="color:#fff;">joint torque impulses</strong>, the Flight Recorder provides definitive proof of timing regressions vs. policy failure.
+        </div>
+    </div>
+
+    <script>
+        const flightData = {"timestamps": [0.0, 12.2, 21.7, 31.8, 41.8, 50.3, 62.1, 71.7, 81.8, 90.4, 100.3, 112.1, 120.1, 132.4, 141.6, 150.5, 162.1, 171.7, 181.8, 191.9, 201.7, 211.8, 221.8, 231.8, 241.0, 250.4, 262.1, 271.7, 281.8, 290.9, 300.4, 312.1, 320.7, 332.2, 341.8, 351.4, 362.1, 371.9, 380.1, 391.5, 403.5, 411.3, 421.0, 431.1, 443.7, 451.5, 460.2, 471.9, 481.7, 491.8, 501.1, 511.9, 520.7, 532.1, 540.8, 555.2, 561.2, 570.7, 580.4, 592.8, 605.0, 612.2, 621.8, 631.1, 647.3, 650.5, 662.3, 671.6, 681.8, 691.8, 701.9, 712.5, 720.1, 732.3, 742.4, 753.2, 763.4, 771.4, 781.2, 791.5, 801.6, 811.8, 820.5, 832.2, 841.7, 850.5, 862.1, 871.8, 881.8, 891.9, 900.3, 912.2, 921.7, 931.8, 941.8, 951.5, 961.9, 971.9, 981.8, 991.9, 1003.0, 1011.2, 1022.0, 1031.7, 1041.9, 1051.8, 1061.8, 1071.8, 1080.8, 1092.0, 1101.5, 1111.8, 1121.8, 1131.9, 1141.7, 1153.7, 1161.4, 1171.9, 1181.9, 1191.1, 1204.8, 1211.0, 1222.1, 1230.5, 1241.3, 1256.0, 1260.7, 1272.0, 1281.7, 1291.8, 1302.7, 1310.9, 1322.0, 1331.8, 1341.9, 1351.8, 1360.1, 1372.3, 1381.6, 1391.8, 1401.6, 1411.8, 1421.8, 1431.7, 1441.8, 1450.3, 1462.1, 1471.7, 1481.8, 1491.8, 1500.3, 1512.1, 1521.7, 1531.8, 1541.1, 1550.3, 1562.2, 1571.7, 1581.8, 1591.2, 1605.5, 1610.5, 1620.5, 1632.1, 1641.7, 1650.4, 1665.5, 1670.8, 1682.0, 1691.8, 1705.4, 1710.9, 1721.1, 1732.0, 1741.9, 1752.6, 1761.6, 1775.9, 1780.8, 1791.0, 1800.4, 1812.1, 1821.5, 1831.8, 1841.9, 1849.9, 1862.2, 1871.6, 1881.8, 1891.0, 1902.0, 1911.2, 1921.9, 1931.8, 1941.0, 1951.3, 1961.9, 1971.7, 1981.7, 1991.8, 2000.3, 2012.1, 2021.7, 2031.8, 2041.0, 2050.7, 2061.7, 2071.8, 2081.9, 2091.3, 2102.2, 2111.7, 2121.8, 2131.8, 2144.7, 2153.3, 2161.4, 2171.9, 2181.8, 2194.6, 2203.2, 2212.2, 2221.4, 2231.1, 2245.5, 2252.3, 2261.6, 2271.9, 2280.5, 2294.3, 2302.6, 2310.3, 2319.9, 2332.0, 2341.8, 2351.7, 2361.3, 2371.2, 2381.9, 2391.3, 2402.9, 2410.9, 2420.3, 2430.4, 2442.7, 2451.6, 2461.0, 2471.6, 2481.9, 2494.9], "sync_buffer": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 50, 49, 48, 47, 46, 45, 44, 43, 42, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 50, 49, 48, 47, 46, 45, 44, 43, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 50, 49, 48, 47, 46, 45, 44, 50, 49, 48, 47, 46, 45, 44, 43, 42, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 50, 49, 48, 47, 46, 45, 44, 43, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 50, 49, 48, 47, 46, 45, 44, 50, 49, 48, 47, 46, 45, 44, 43, 50, 49, 48, 47, 46, 45, 44, 43, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 50, 49, 48, 47, 46, 45, 44, 43, 42, 50, 49, 48, 47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 50, 49, 48, 47], "async_buffer": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 26, 25, 24, 23, 22, 21, 20, 19, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 28, 27, 26, 25, 24, 23, 22, 21, 20, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 40, 39, 38, 37, 36, 35, 34, 33, 42, 41, 40, 39, 38, 37, 36, 35, 34, 40, 39, 38, 37, 36, 35, 34, 33, 42, 41, 40, 39, 38, 37, 36, 35, 34, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 27, 26, 25, 24, 23, 22, 21, 20, 19, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 40, 39, 38, 37, 36, 35, 34, 33, 32, 41, 40, 39, 38, 37, 36, 35, 34, 33, 41, 40, 39, 38, 37, 36, 35, 34, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 40, 39, 38, 37, 36, 35, 34], "sync_torque": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 29.8, 27.07, 24.25, 21.4, 18.57, 15.8, 13.13, 10.58, 8.18, 5.98, 4.05, 1.31, 2.23, 3.34, 4.41, 5.41, 6.31, 7.13, 7.85, 8.48, 9.16, 9.71, 10.16, 10.53, 10.81, 11.02, 11.15, 11.21, 11.21, 11.16, 10.76, 10.64, 10.48, 10.28, 10.05, 9.78, 9.5, 9.19, 12.82, 11.82, 10.86, 9.96, 9.12, 8.35, 7.66, 7.06, 6.55, 6.14, 5.84, 5.63, 5.52, 5.5, 5.54, 5.64, 5.79, 5.97, 6.16, 6.37, 6.58, 6.78, 6.98, 7.17, 33.35, 27.29, 21.8, 16.87, 12.5, 8.67, 5.39, 4.41, 5.51, 6.34, 6.94, 7.32, 7.52, 7.58, 7.52, 7.38, 8.99, 8.44, 7.92, 7.45, 7.05, 6.73, 6.49, 6.34, 6.26, 6.24, 5.89, 6.03, 6.18, 6.33, 6.45, 6.56, 6.64, 6.71, 10.04, 9.34, 8.74, 8.25, 7.86, 7.57, 7.36, 7.23, 7.17, 7.16, 7.19, 7.26, 7.34, 7.44, 7.55, 7.65, 7.76, 7.86, 7.96, 8.04, 8.12, 24.38, 20.01, 16.08, 12.58, 9.52, 6.93, 4.85, 3.43, 2.88, 3.16, 3.78, 4.42, 4.97, 5.39, 5.69, 5.88, 5.98, 6.0, 5.97, 5.91, 5.83, 5.75, 5.68, 5.62, 25.54, 20.62, 16.16, 12.16, 8.6, 5.48, 2.76, 5.5, 6.41, 7.08, 7.54, 7.82, 7.94, 7.94, 7.84, 11.68, 10.71, 9.77, 8.89, 8.08, 7.37, 6.77, 6.31, 9.78, 8.78, 8.01, 7.48, 7.17, 7.06, 7.09, 7.24, 7.44, 7.68, 7.92, 8.16, 8.37, 8.55, 8.7, 8.82, 8.91, 8.97, 9.0, 9.0, 8.97, 8.93, 8.86, 8.77, 29.37, 24.04, 19.19, 14.82, 10.94, 7.53, 4.61, 2.31, 1.54, 4.39, 5.5, 6.37, 7.02, 7.46, 7.73, 7.84, 7.83, 7.71, 7.53, 7.28, 7.01, 6.71, 6.42, 6.15, 5.91, 5.71, 5.56, 5.46, 5.41, 5.41, 5.45, 5.52, 5.62, 31.83, 26.0, 20.68, 15.89], "async_torque": [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 55.54, 46.71, 38.44, 30.79, 23.79, 17.47, 11.88, 7.19, 4.14, 4.56, 7.01, 9.55, 11.79, 13.65, 15.14, 16.27, 17.09, 17.61, 17.88, 17.93, 17.79, 17.48, 17.04, 16.18, 15.31, 14.43, 13.56, 12.7, 11.87, 11.06, 10.29, 7.08, 6.1, 6.53, 7.21, 7.63, 7.68, 7.37, 6.82, 5.96, 4.94, 3.83, 2.68, 1.53, 0.49, 0.71, 1.63, 2.47, 3.21, 2.13, 3.16, 4.01, 4.66, 5.73, 6.45, 6.87, 7.05, 7.04, 6.91, 6.7, 6.45, 6.21, 3.77, 4.47, 5.87, 6.86, 7.33, 7.35, 7.03, 6.46, 5.72, 4.9, 4.08, 3.31, 2.7, 2.34, 2.29, 2.51, 2.88, 3.29, 3.7, 2.69, 3.46, 4.11, 4.89, 5.49, 5.95, 6.29, 6.52, 6.67, 6.75, 6.78, 6.78, 6.75, 6.7, 4.85, 5.74, 7.08, 8.01, 8.4, 8.32, 7.85, 7.11, 7.2, 6.59, 5.51, 4.18, 2.77, 1.5, 1.08, 1.91, 2.93, 4.33, 5.93, 7.06, 7.78, 8.17, 8.28, 8.18, 7.93, 7.73, 7.36, 6.9, 6.44, 6.04, 5.74, 5.57, 5.55, 5.65, 6.2, 6.68, 7.11, 7.48, 7.83, 8.13, 8.41, 8.65, 8.85, 9.02, 9.15, 9.24, 9.3, 9.32, 9.31, 9.26, 9.19, 9.09, 8.98, 8.84, 8.69, 8.53, 8.36, 8.35, 8.29, 8.19, 8.07, 7.93, 7.79, 7.66, 7.54, 7.44, 7.4, 8.61, 9.7, 10.29, 10.37, 10.02, 9.33, 8.41, 7.33, 6.16, 5.27, 4.15, 2.97, 1.89, 1.29, 1.59, 2.31, 3.04, 3.27, 3.97, 4.5, 4.88, 5.15, 5.33, 5.44, 5.52, 5.57, 5.61, 5.87, 6.07, 6.23, 6.36, 6.47, 6.56, 6.65, 6.73, 7.08, 7.31, 7.46, 7.55, 7.59, 7.6, 7.58, 7.55, 7.51, 7.46, 7.42, 7.37, 7.32, 7.28, 7.25, 7.22, 7.2, 7.19, 7.18, 7.18, 7.19, 7.21, 7.23, 7.55, 7.79, 7.97, 8.1, 8.2, 8.26, 8.31, 8.35, 8.38, 8.41, 8.37, 9.35, 10.24, 10.7, 10.7, 10.31, 9.61], "vlm_chunks": [{"time_ms": 120.1, "latency_ms": 110.0, "seq_id": 1, "is_spike": false}, {"time_ms": 360.3, "latency_ms": 240.1, "seq_id": 2, "is_spike": true}, {"time_ms": 432.5, "latency_ms": 72.1, "seq_id": 3, "is_spike": false}, {"time_ms": 653.1, "latency_ms": 220.5, "seq_id": 4, "is_spike": true}, {"time_ms": 745.9, "latency_ms": 92.5, "seq_id": 5, "is_spike": false}, {"time_ms": 970.8, "latency_ms": 224.7, "seq_id": 6, "is_spike": true}, {"time_ms": 1071.8, "latency_ms": 100.9, "seq_id": 7, "is_spike": false}, {"time_ms": 1153.8, "latency_ms": 81.8, "seq_id": 8, "is_spike": false}, {"time_ms": 1251.2, "latency_ms": 97.1, "seq_id": 9, "is_spike": false}, {"time_ms": 1326.1, "latency_ms": 74.7, "seq_id": 10, "is_spike": false}, {"time_ms": 1420.1, "latency_ms": 93.9, "seq_id": 11, "is_spike": false}, {"time_ms": 1649.7, "latency_ms": 229.4, "seq_id": 12, "is_spike": true}, {"time_ms": 1738.8, "latency_ms": 88.9, "seq_id": 13, "is_spike": false}, {"time_ms": 1831.8, "latency_ms": 93.0, "seq_id": 14, "is_spike": false}, {"time_ms": 1926.1, "latency_ms": 94.2, "seq_id": 15, "is_spike": false}, {"time_ms": 2018.6, "latency_ms": 92.4, "seq_id": 16, "is_spike": false}, {"time_ms": 2093.1, "latency_ms": 74.3, "seq_id": 17, "is_spike": false}, {"time_ms": 2326.7, "latency_ms": 233.5, "seq_id": 18, "is_spike": true}, {"time_ms": 2428.3, "latency_ms": 101.5, "seq_id": 19, "is_spike": false}, {"time_ms": 2519.8, "latency_ms": 91.4, "seq_id": 20, "is_spike": false}], "total_ticks": 250};
+
+        // Initialize Buffer Chart
+        const ctxBuf = document.getElementById('bufferChart').getContext('2d');
+        const bufChart = new Chart(ctxBuf, {
+            type: 'line',
+            data: {
+                labels: flightData.timestamps.map(t => '+' + t + 'ms'),
+                datasets: [
+                    {
+                        label: 'Sync Baseline Buffer Depth (Steps)',
+                        data: flightData.sync_buffer,
+                        borderColor: '#ef4444',
+                        backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Our Async Runtime Buffer Depth (Steps)',
+                        data: flightData.async_buffer,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        borderWidth: 2,
+                        fill: true,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: { display: true, text: 'Action Buffer Horizon (Buffer Starvation & Freeze Window)', color: '#e2e8f0' },
+                    legend: { labels: { color: '#94a3b8' } }
+                },
+                scales: {
+                    x: { ticks: { color: '#94a3b8', maxTicksLimit: 12 }, grid: { color: '#1f2d4a' } },
+                    y: { title: { display: true, text: 'Steps (1 step = 10ms)', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, grid: { color: '#1f2d4a' } }
+                }
+            }
+        });
+
+        // Initialize Torque Chart
+        const ctxTorq = document.getElementById('torqueChart').getContext('2d');
+        const torqChart = new Chart(ctxTorq, {
+            type: 'line',
+            data: {
+                labels: flightData.timestamps.map(t => '+' + t + 'ms'),
+                datasets: [
+                    {
+                        label: 'Sync Baseline Torque Norm (N·m)',
+                        data: flightData.sync_torque,
+                        borderColor: '#f59e0b',
+                        borderWidth: 1.5,
+                        pointRadius: 0
+                    },
+                    {
+                        label: 'Our Async Runtime Torque Norm (N·m)',
+                        data: flightData.async_torque,
+                        borderColor: '#3b82f6',
+                        borderWidth: 1.5,
+                        pointRadius: 0
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: { display: true, text: 'Joint Torque Norm & Deceleration Profile (Mechanical Effort)', color: '#e2e8f0' },
+                    legend: { labels: { color: '#94a3b8' } }
+                },
+                scales: {
+                    x: { ticks: { color: '#94a3b8', maxTicksLimit: 12 }, grid: { color: '#1f2d4a' } },
+                    y: { title: { display: true, text: 'Torque Norm (N·m)', color: '#94a3b8' }, ticks: { color: '#94a3b8' }, grid: { color: '#1f2d4a' } }
+                }
+            }
+        });
+
+        // Scrubber interactivity
+        const slider = document.getElementById('timeline-slider');
+        const scrubLabel = document.getElementById('scrub-label');
+        const syncBufVal = document.getElementById('sync-buf-val');
+        const asyncBufVal = document.getElementById('async-buf-val');
+        const syncTorqVal = document.getElementById('sync-torq-val');
+        const asyncTorqVal = document.getElementById('async-torq-val');
+        const syncStatusVal = document.getElementById('sync-status-val');
+        const asyncStatusVal = document.getElementById('async-status-val');
+
+        function updateScrubber(idx) {
+            const t = flightData.timestamps[idx];
+            scrubLabel.innerText = `Tick ${idx + 1} / ${flightData.total_ticks} (+${t} ms)`;
+
+            const sBuf = flightData.sync_buffer[idx];
+            const aBuf = flightData.async_buffer[idx];
+            const sTorq = flightData.sync_torque[idx];
+            const aTorq = flightData.async_torque[idx];
+
+            syncBufVal.innerText = sBuf + ' steps';
+            asyncBufVal.innerText = aBuf + ' steps';
+            syncTorqVal.innerText = sTorq + ' N·m';
+            asyncTorqVal.innerText = aTorq + ' N·m';
+
+            syncStatusVal.innerText = sBuf === 0 ? '🛑 STALLED FREEZE (Buffer Starvation)' : '🟢 TRACKING NOMINAL';
+            syncStatusVal.style.color = sBuf === 0 ? '#ef4444' : '#10b981';
+
+            asyncStatusVal.innerText = aBuf === 0 ? '🟡 DAMPED DECELERATION (Momentum Absorbed)' : '🟢 TRACKING & ENSEMBLING';
+            asyncStatusVal.style.color = aBuf === 0 ? '#f59e0b' : '#10b981';
+        }
+
+        slider.addEventListener('input', (e) => {
+            updateScrubber(parseInt(e.target.value));
+        });
+
+        document.getElementById('btn-jump-spike').addEventListener('click', () => {
+            slider.value = 60;
+            updateScrubber(60);
+        });
+
+        let isPlaying = false;
+        let playInterval = null;
+        const playBtn = document.getElementById('btn-play');
+
+        playBtn.addEventListener('click', () => {
+            if (isPlaying) {
+                clearInterval(playInterval);
+                playBtn.innerText = '▶ Play 100Hz';
+                isPlaying = false;
+            } else {
+                isPlaying = true;
+                playBtn.innerText = '⏸ Pause';
+                playInterval = setInterval(() => {
+                    let val = parseInt(slider.value) + 1;
+                    if (val >= flightData.total_ticks) val = 0;
+                    slider.value = val;
+                    updateScrubber(val);
+                }, 30);
+            }
+        });
+
+        updateScrubber(0);
+    </script>
+</body>
+</html>

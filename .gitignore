@@ -1,0 +1,32 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environments & virtualenvs
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Socket & IPC runtime artifacts
+/tmp/rtm*.sock
+*.sock
+
+# IDE & Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Git tracking note: We track .tick binary benchmark streams and tabletop_cube_pick.mp4
+# as reference evaluation assets.
