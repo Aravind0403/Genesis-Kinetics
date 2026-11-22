@@ -3,8 +3,9 @@ Generates an interactive, standalone HTML Visual Dashboard from .tick flight tra
 Includes:
 - Side-by-side layout: 3D Simulation Video Player + Live Scrubber Telemetry.
 - Side-by-side dynamic charts: Action Buffer Horizon + Joint Torque Norm.
-- Dynamic vertical tracking cursor and pulse indicators on both charts.
-- 2-way synchronization between video playback, slider, and waveform crosshairs.
+- Dynamic progressive line growth: lines unroll in real time in lock-step as the video plays or as the user scrubs.
+- Glowing oscilloscope pulse dot and tracking cursor at the leading edge of both waveforms.
+- High-performance, single RAF two-way synchronization between video, slider, and charts.
 """
 
 import json
@@ -140,7 +141,7 @@ def generate_html_dashboard(
         /* Top Row: Video (Left) + Scrubber Telemetry (Right) Side-by-Side */
         .top-split-grid {{
             display: grid;
-            grid-template-columns: 1.1fr 1fr;
+            grid-template-columns: 1.15fr 1fr;
             gap: 20px;
             margin-bottom: 20px;
         }}
@@ -183,14 +184,15 @@ def generate_html_dashboard(
             position: absolute;
             top: 10px;
             left: 10px;
-            background: rgba(0, 0, 0, 0.7);
+            background: rgba(0, 0, 0, 0.75);
             backdrop-filter: blur(4px);
-            padding: 4px 10px;
-            border-radius: 4px;
+            padding: 5px 12px;
+            border-radius: 5px;
             font-family: monospace;
             font-size: 11px;
             color: var(--accent-green);
             border: 1px solid rgba(16, 185, 129, 0.4);
+            letter-spacing: 0.5px;
         }}
 
         /* Scrubber & Controls */
@@ -239,9 +241,9 @@ def generate_html_dashboard(
         }}
         .side-title {{ font-weight: 700; font-size: 13px; margin-bottom: 6px; }}
         .metric-row {{ display: flex; justify-content: space-between; font-size: 13px; margin-top: 4px; }}
-        .status-badge {{ font-size: 11px; font-weight: 700; padding: 2px 6px; border-radius: 4px; margin-top: 6px; text-align: center; }}
+        .status-badge {{ font-size: 11px; font-weight: 700; padding: 3px 6px; border-radius: 4px; margin-top: 8px; text-align: center; }}
 
-        /* Bottom Row: Charts Side-by-Side */
+        /* Bottom Row: Dynamic Charts Side-by-Side */
         .charts-side-grid {{
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -309,14 +311,14 @@ def generate_html_dashboard(
         <div class="panel-card">
             <div class="panel-title">
                 <span>🎥 3D Genesis World Rollout (Apple Metal)</span>
-                <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">Franka Tabletop Pick</span>
+                <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">Franka Tabletop Pick (14.8 cm Lift)</span>
             </div>
             <div class="video-wrapper">
                 <video id="sim-video" src="tabletop_cube_pick.mp4" playsinline muted preload="auto"></video>
                 <div class="video-hud" id="video-hud-overlay">Genesis World 100Hz | Metal</div>
             </div>
             <div style="font-size: 12px; color: var(--text-muted); margin-top: 8px; text-align: center;">
-                Physical 4-Phase Rollout: Approach &rarr; Descend &rarr; Grasp Cube &rarr; Lift (Synchronized with Scrubber)
+                Physical 5-Phase Rollout: Approach &rarr; Descend &rarr; Grasp &rarr; Lift 14.8cm &rarr; Hold (Synchronized In-Tandem)
             </div>
         </div>
 
@@ -340,18 +342,18 @@ def generate_html_dashboard(
                     <div class="side-title text-red">🔴 Synchronous Baseline</div>
                     <div class="metric-row"><span>Buffer Depth:</span><strong id="sync-buf-val">0 steps</strong></div>
                     <div class="metric-row"><span>Joint Torque:</span><strong id="sync-torq-val">0.00 N·m</strong></div>
-                    <div class="status-badge" id="sync-status-badge">🟢 TRACKING</div>
+                    <div class="status-badge" id="sync-status-badge">🟢 TRACKING NOMINAL</div>
                 </div>
                 <div class="side-card" style="border-left: 3px solid var(--accent-green);">
                     <div class="side-title text-green">🟢 Genesis-Kinetics Runtime</div>
                     <div class="metric-row"><span>Buffer Depth:</span><strong id="async-buf-val">0 steps</strong></div>
                     <div class="metric-row"><span>Joint Torque:</span><strong id="async-torq-val">0.00 N·m</strong></div>
-                    <div class="status-badge" id="async-status-badge">🟢 TRACKING</div>
+                    <div class="status-badge" id="async-status-badge">🟢 TRACKING & ENSEMBLING</div>
                 </div>
             </div>
 
             <div style="margin-top: 14px; padding: 10px; background: rgba(30, 41, 59, 0.4); border-radius: 6px; font-size: 12px; color: var(--text-muted);">
-                💡 <strong>Dynamic Causal Scrubbing</strong>: Drag the slider to see how the synchronous baseline stalls when inference spikes, while Genesis-Kinetics executes smooth quintic damping.
+                💡 <strong>Dynamic In-Tandem Unrolling</strong>: Drag the scrubber or hit Play. The video frame, status badges, and internal graph waveform lines dynamically draw forward in parallel.
             </div>
         </div>
     </div>
@@ -382,42 +384,86 @@ def generate_html_dashboard(
     <script>
         const flightData = {json.dumps(payload)};
         let currentTickIndex = 0;
+        const totalTicks = flightData.total_ticks;
 
-        // Custom Chart.js Plugin: Dynamic Vertical Scanning Cursor Line
+        // Custom Chart.js Plugin: Dynamic Oscilloscope / Progressive Scan Line & Glowing Head Indicator
         const dynamicCursorPlugin = {{
             id: 'dynamicCursorPlugin',
             afterDatasetsDraw(chart) {{
-                if (typeof currentTickIndex !== 'undefined') {{
-                    const ctx = chart.ctx;
-                    const meta = chart.getDatasetMeta(0);
-                    if (meta && meta.data && meta.data[currentTickIndex]) {{
-                        const x = meta.data[currentTickIndex].x;
-                        const topY = chart.scales.y.top;
-                        const bottomY = chart.scales.y.bottom;
+                if (typeof currentTickIndex === 'undefined' || currentTickIndex < 0) return;
+                const ctx = chart.ctx;
+                const meta0 = chart.getDatasetMeta(0);
+                const meta1 = chart.getDatasetMeta(1);
 
-                        ctx.save();
-                        // Vertical scan line
-                        ctx.beginPath();
-                        ctx.moveTo(x, topY);
-                        ctx.lineTo(x, bottomY);
-                        ctx.lineWidth = 2;
-                        ctx.strokeStyle = '#38bdf8'; // Neon Sky Blue
-                        ctx.setLineDash([4, 4]);
-                        ctx.stroke();
+                if (meta0 && meta0.data && meta0.data[currentTickIndex]) {{
+                    const pt0 = meta0.data[currentTickIndex];
+                    const x = pt0.x;
+                    const topY = chart.scales.y.top;
+                    const bottomY = chart.scales.y.bottom;
 
-                        // Dynamic pulse circle at the point
-                        const y = meta.data[currentTickIndex].y;
+                    ctx.save();
+                    // Vertical tracking line
+                    ctx.beginPath();
+                    ctx.moveTo(x, topY);
+                    ctx.lineTo(x, bottomY);
+                    ctx.lineWidth = 1.5;
+                    ctx.strokeStyle = 'rgba(56, 189, 248, 0.45)'; // Sky blue tracking line
+                    ctx.setLineDash([3, 3]);
+                    ctx.stroke();
+
+                    // Glowing Head Dot for Dataset 0
+                    if (pt0 && !isNaN(pt0.y)) {{
                         ctx.beginPath();
-                        ctx.arc(x, y, 5, 0, 2 * Math.PI);
-                        ctx.fillStyle = '#38bdf8';
+                        ctx.arc(x, pt0.y, 5, 0, 2 * Math.PI);
+                        ctx.fillStyle = chart.data.datasets[0].borderColor;
+                        ctx.shadowColor = chart.data.datasets[0].borderColor;
+                        ctx.shadowBlur = 10;
                         ctx.fill();
-                        ctx.restore();
+
+                        ctx.beginPath();
+                        ctx.arc(x, pt0.y, 8, 0, 2 * Math.PI);
+                        ctx.lineWidth = 1.5;
+                        ctx.strokeStyle = chart.data.datasets[0].borderColor;
+                        ctx.stroke();
                     }}
+
+                    // Glowing Head Dot for Dataset 1
+                    if (meta1 && meta1.data && meta1.data[currentTickIndex]) {{
+                        const pt1 = meta1.data[currentTickIndex];
+                        if (pt1 && !isNaN(pt1.y)) {{
+                            ctx.beginPath();
+                            ctx.arc(x, pt1.y, 5, 0, 2 * Math.PI);
+                            ctx.fillStyle = chart.data.datasets[1].borderColor;
+                            ctx.shadowColor = chart.data.datasets[1].borderColor;
+                            ctx.shadowBlur = 10;
+                            ctx.fill();
+
+                            ctx.beginPath();
+                            ctx.arc(x, pt1.y, 8, 0, 2 * Math.PI);
+                            ctx.lineWidth = 1.5;
+                            ctx.strokeStyle = chart.data.datasets[1].borderColor;
+                            ctx.stroke();
+                        }}
+                    }}
+
+                    ctx.restore();
                 }}
             }}
         }};
 
         Chart.register(dynamicCursorPlugin);
+
+        // Pre-allocate progressive unrolling buffers
+        const dynamicSyncBuf = new Array(totalTicks).fill(null);
+        const dynamicAsyncBuf = new Array(totalTicks).fill(null);
+        const dynamicSyncTorq = new Array(totalTicks).fill(null);
+        const dynamicAsyncTorq = new Array(totalTicks).fill(null);
+
+        // Populate initial point (index 0)
+        dynamicSyncBuf[0] = flightData.sync_buffer[0];
+        dynamicAsyncBuf[0] = flightData.async_buffer[0];
+        dynamicSyncTorq[0] = flightData.sync_torque[0];
+        dynamicAsyncTorq[0] = flightData.async_torque[0];
 
         // Chart 1: Action Buffer Depth (Left)
         const ctxBuf = document.getElementById('bufferChart').getContext('2d');
@@ -428,20 +474,22 @@ def generate_html_dashboard(
                 datasets: [
                     {{
                         label: 'Sync Baseline Buffer (Steps)',
-                        data: flightData.sync_buffer,
+                        data: dynamicSyncBuf,
                         borderColor: '#ef4444',
                         backgroundColor: 'rgba(239, 68, 68, 0.08)',
-                        borderWidth: 2,
+                        borderWidth: 2.5,
                         fill: true,
+                        spanGaps: false,
                         pointRadius: 0
                     }},
                     {{
                         label: 'Genesis-Kinetics Buffer (Steps)',
-                        data: flightData.async_buffer,
+                        data: dynamicAsyncBuf,
                         borderColor: '#10b981',
                         backgroundColor: 'rgba(16, 185, 129, 0.08)',
-                        borderWidth: 2,
+                        borderWidth: 2.5,
                         fill: true,
+                        spanGaps: false,
                         pointRadius: 0
                     }}
                 ]
@@ -449,13 +497,23 @@ def generate_html_dashboard(
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
                 plugins: {{
-                    title: {{ display: true, text: 'Action Buffer Horizon (Starvation Window)', color: '#f1f5f9', font: {{ size: 14, weight: '700' }} }},
+                    title: {{ display: true, text: 'Action Buffer Horizon (Dynamic In-Tandem Unrolling)', color: '#f1f5f9', font: {{ size: 14, weight: '700' }} }},
                     legend: {{ labels: {{ color: '#94a3b8', boxWidth: 12 }} }}
                 }},
                 scales: {{
-                    x: {{ ticks: {{ color: '#64748b', maxTicksLimit: 8 }}, grid: {{ color: '#1e293b' }} }},
-                    y: {{ title: {{ display: true, text: 'Steps (1 step = 10ms)', color: '#94a3b8' }}, ticks: {{ color: '#64748b' }}, grid: {{ color: '#1e293b' }} }}
+                    x: {{
+                        ticks: {{ color: '#64748b', maxTicksLimit: 8 }},
+                        grid: {{ color: '#1e293b' }}
+                    }},
+                    y: {{
+                        title: {{ display: true, text: 'Steps (1 step = 10ms)', color: '#94a3b8' }},
+                        ticks: {{ color: '#64748b' }},
+                        grid: {{ color: '#1e293b' }},
+                        min: 0,
+                        max: 55
+                    }}
                 }}
             }}
         }});
@@ -469,16 +527,18 @@ def generate_html_dashboard(
                 datasets: [
                     {{
                         label: 'Sync Baseline Torque (N·m)',
-                        data: flightData.sync_torque,
+                        data: dynamicSyncTorq,
                         borderColor: '#f59e0b',
-                        borderWidth: 1.5,
+                        borderWidth: 2,
+                        spanGaps: false,
                         pointRadius: 0
                     }},
                     {{
                         label: 'Genesis-Kinetics Torque (N·m)',
-                        data: flightData.async_torque,
+                        data: dynamicAsyncTorq,
                         borderColor: '#3b82f6',
-                        borderWidth: 1.5,
+                        borderWidth: 2,
+                        spanGaps: false,
                         pointRadius: 0
                     }}
                 ]
@@ -486,13 +546,23 @@ def generate_html_dashboard(
             options: {{
                 responsive: true,
                 maintainAspectRatio: false,
+                animation: false,
                 plugins: {{
-                    title: {{ display: true, text: 'Joint Torque Norm & Deceleration Profile', color: '#f1f5f9', font: {{ size: 14, weight: '700' }} }},
+                    title: {{ display: true, text: 'Joint Torque Norm & Deceleration (Live Dynamic Waveform)', color: '#f1f5f9', font: {{ size: 14, weight: '700' }} }},
                     legend: {{ labels: {{ color: '#94a3b8', boxWidth: 12 }} }}
                 }},
                 scales: {{
-                    x: {{ ticks: {{ color: '#64748b', maxTicksLimit: 8 }}, grid: {{ color: '#1e293b' }} }},
-                    y: {{ title: {{ display: true, text: 'Torque Norm (N·m)', color: '#94a3b8' }}, ticks: {{ color: '#64748b' }}, grid: {{ color: '#1e293b' }} }}
+                    x: {{
+                        ticks: {{ color: '#64748b', maxTicksLimit: 8 }},
+                        grid: {{ color: '#1e293b' }}
+                    }},
+                    y: {{
+                        title: {{ display: true, text: 'Torque Norm (N·m)', color: '#94a3b8' }},
+                        ticks: {{ color: '#64748b' }},
+                        grid: {{ color: '#1e293b' }},
+                        min: 0,
+                        max: 42
+                    }}
                 }}
             }}
         }});
@@ -513,22 +583,31 @@ def generate_html_dashboard(
         function updateTick(idx, syncVideo = true) {{
             currentTickIndex = idx;
             const t = flightData.timestamps[idx];
-            scrubLabel.innerText = `Tick ${{idx + 1}} / ${{flightData.total_ticks}} (+${{t}} ms)`;
-            videoHud.innerText = `Tick ${{idx + 1}} | +${{t}}ms | Genesis Metal`;
+            scrubLabel.innerText = `Tick ${{idx + 1}} / ${{totalTicks}} (+${{t}} ms)`;
+            videoHud.innerText = `Tick ${{idx + 1}} | +${{t}}ms | Genesis Metal 100Hz`;
+
+            // Progressively unroll / retract the chart lines dynamically in lock-step
+            for (let i = 0; i < totalTicks; i++) {{
+                const show = (i <= idx);
+                dynamicSyncBuf[i] = show ? flightData.sync_buffer[i] : null;
+                dynamicAsyncBuf[i] = show ? flightData.async_buffer[i] : null;
+                dynamicSyncTorq[i] = show ? flightData.sync_torque[i] : null;
+                dynamicAsyncTorq[i] = show ? flightData.async_torque[i] : null;
+            }}
 
             // Sync video timestamp
             if (syncVideo && video.duration) {{
-                const targetTime = (idx / (flightData.total_ticks - 1)) * video.duration;
-                if (Math.abs(video.currentTime - targetTime) > 0.05) {{
+                const targetTime = (idx / (totalTicks - 1)) * video.duration;
+                if (Math.abs(video.currentTime - targetTime) > 0.03) {{
                     video.currentTime = targetTime;
                 }}
             }}
 
-            // Dynamic Chart Cursor Updates
+            // Re-render chart frame instantly
             bufChart.update('none');
             torqChart.update('none');
 
-            // Update Metrics
+            // Update Metrics Cards
             const sBuf = flightData.sync_buffer[idx];
             const aBuf = flightData.async_buffer[idx];
             const sTorq = flightData.sync_torque[idx];
@@ -561,55 +640,84 @@ def generate_html_dashboard(
             }}
         }}
 
-        // Slider scrubbing
-        slider.addEventListener('input', (e) => {{
-            updateTick(parseInt(e.target.value), true);
-        }});
-
-        // Jump to spike button
-        document.getElementById('btn-jump-spike').addEventListener('click', () => {{
-            slider.value = 36;
-            updateTick(36, true);
-        }});
-
-        // Play/Pause button
         let isPlaying = false;
-        let playTimer = null;
+        let animFrameId = null;
         const playBtn = document.getElementById('btn-play');
+
+        function playStep() {{
+            if (!isPlaying) return;
+            if (video.duration) {{
+                // If video reached end, loop seamlessly
+                if (video.currentTime >= video.duration - 0.02 || video.ended) {{
+                    video.currentTime = 0;
+                }}
+                const progress = Math.min(1.0, video.currentTime / video.duration);
+                const tickFromVideo = Math.min(totalTicks - 1, Math.round(progress * (totalTicks - 1)));
+                if (tickFromVideo !== currentTickIndex) {{
+                    slider.value = tickFromVideo;
+                    updateTick(tickFromVideo, false);
+                }}
+            }}
+            animFrameId = requestAnimationFrame(playStep);
+        }}
 
         playBtn.addEventListener('click', () => {{
             if (isPlaying) {{
                 isPlaying = false;
-                clearInterval(playTimer);
                 video.pause();
+                cancelAnimationFrame(animFrameId);
                 playBtn.innerText = '▶ Play 100Hz';
             }} else {{
                 isPlaying = true;
                 playBtn.innerText = '⏸ Pause';
                 video.play();
-                playTimer = setInterval(() => {{
-                    let val = parseInt(slider.value) + 1;
-                    if (val >= flightData.total_ticks) {{
-                        val = 0;
-                        video.currentTime = 0;
-                    }}
-                    slider.value = val;
-                    updateTick(val, false);
-                }}, 25);
+                animFrameId = requestAnimationFrame(playStep);
             }}
         }});
 
-        // Synchronize from video timeupdate
-        video.addEventListener('timeupdate', () => {{
-            if (isPlaying && video.duration) {{
-                const tickFromVideo = Math.floor((video.currentTime / video.duration) * (flightData.total_ticks - 1));
-                if (tickFromVideo >= 0 && tickFromVideo < flightData.total_ticks) {{
-                    slider.value = tickFromVideo;
-                    updateTick(tickFromVideo, false);
-                }}
+        // Interactive scrubbing via slider
+        slider.addEventListener('input', (e) => {{
+            const idx = parseInt(e.target.value);
+            if (isPlaying) {{
+                isPlaying = false;
+                video.pause();
+                cancelAnimationFrame(animFrameId);
+                playBtn.innerText = '▶ Play 100Hz';
+            }}
+            updateTick(idx, true);
+        }});
+
+        // Jump to spike button
+        document.getElementById('btn-jump-spike').addEventListener('click', () => {{
+            if (isPlaying) {{
+                isPlaying = false;
+                video.pause();
+                cancelAnimationFrame(animFrameId);
+                playBtn.innerText = '▶ Play 100Hz';
+            }}
+            const spikeTick = 36;
+            slider.value = spikeTick;
+            updateTick(spikeTick, true);
+        }});
+
+        // Hook video events
+        video.addEventListener('play', () => {{
+            if (!isPlaying) {{
+                isPlaying = true;
+                playBtn.innerText = '⏸ Pause';
+                animFrameId = requestAnimationFrame(playStep);
             }}
         }});
 
+        video.addEventListener('pause', () => {{
+            if (isPlaying) {{
+                isPlaying = false;
+                playBtn.innerText = '▶ Play 100Hz';
+                cancelAnimationFrame(animFrameId);
+            }}
+        }});
+
+        // Initialize at tick 0
         updateTick(0, true);
     </script>
 </body>

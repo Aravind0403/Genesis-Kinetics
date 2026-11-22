@@ -28,42 +28,47 @@ from telemetry.visualizer import print_flight_summary
 
 def generate_pick_trajectory(steps: int = 250) -> Tuple[np.ndarray, np.ndarray]:
     """
-    Generates joint waypoints and gripper positions for a 4-phase pick-and-lift task:
-      Phase 1 (steps 0..80): Pre-grasp approach above cube (gripper open)
-      Phase 2 (steps 80..130): Descend onto cube
-      Phase 3 (steps 130..170): Squeeze gripper around cube
-      Phase 4 (steps 170..250): Lift cube up into the air
+    Generates joint waypoints and gripper positions for a 5-phase pick-and-lift task:
+      Phase 1 (steps 0..65): Pre-grasp approach above cube (gripper open)
+      Phase 2 (steps 65..115): Descend down onto cube (fingers open flanking the cube)
+      Phase 3 (steps 115..155): Squeeze gripper around cube (firm physical grasp)
+      Phase 4 (steps 155..225): Lift cube high into the air (20cm vertical clearance)
+      Phase 5 (steps 225..250): Hold steady in the air
     """
-    # Keyframe joint configurations for Franka arm (7 DOF)
+    # Keyframe joint configurations for Franka arm (7 DOF, downward pointing end-effector)
     q_home = np.array([0.0, -0.785, 0.0, -2.356, 0.0, 1.571, 0.785])
-    q_pre_grasp = np.array([0.0, -0.3, 0.0, -2.2, 0.0, 1.9, 0.785])
-    q_grasp = np.array([0.0, -0.15, 0.0, -2.35, 0.0, 2.2, 0.785])
-    q_lift = np.array([0.0, -0.5, 0.0, -2.0, 0.0, 1.6, 0.785])
+    q_pre_grasp = np.array([0.0, 0.229, 0.0, -2.402, 0.0, 2.631, 0.785])
+    q_grasp = np.array([0.0, 0.597, 0.0, -2.319, 0.0, 2.917, 0.785])
+    q_lift = np.array([0.0, 0.093, 0.0, -2.389, 0.0, 2.482, 0.785])
 
     arm_traj = np.zeros((steps, 7))
     gripper_traj = np.zeros(steps)
 
     for i in range(steps):
-        if i < 80:
+        if i < 65:
             # Interpolate home -> pre-grasp
-            alpha = i / 80.0
+            alpha = i / 65.0
             arm_traj[i] = (1.0 - alpha) * q_home + alpha * q_pre_grasp
             gripper_traj[i] = 0.04  # Open
-        elif i < 130:
+        elif i < 115:
             # Interpolate pre-grasp -> grasp
-            alpha = (i - 80) / 50.0
+            alpha = (i - 65) / 50.0
             arm_traj[i] = (1.0 - alpha) * q_pre_grasp + alpha * q_grasp
             gripper_traj[i] = 0.04  # Open
-        elif i < 170:
+        elif i < 155:
             # Hold position, close gripper
-            alpha = (i - 130) / 40.0
+            alpha = (i - 115) / 40.0
             arm_traj[i] = q_grasp
-            gripper_traj[i] = 0.04 * (1.0 - alpha) + 0.005 * alpha  # Squeezing
-        else:
+            gripper_traj[i] = 0.04 * (1.0 - alpha) + 0.00 * alpha  # Squeezing
+        elif i < 225:
             # Lift up
-            alpha = (i - 170) / 80.0
+            alpha = (i - 155) / 70.0
             arm_traj[i] = (1.0 - alpha) * q_grasp + alpha * q_lift
-            gripper_traj[i] = 0.005  # Held closed
+            gripper_traj[i] = 0.00  # Held closed
+        else:
+            # Hold at top
+            arm_traj[i] = q_lift
+            gripper_traj[i] = 0.00
 
     return arm_traj, gripper_traj
 

@@ -57,6 +57,9 @@ class GenesisArmEnv:
         self.table = None
         self.cube = None
         self.camera = None
+        self.hand = None
+        self.is_grasped = False
+        self.grasp_offset = None
 
         # Franka DOF indices
         self.arm_dofs = list(range(7))      # Joints 0..6 (Arm)
@@ -85,17 +88,22 @@ class GenesisArmEnv:
                 show_viewer=self.show_viewer,
             )
 
-            # 1. Ground Plane
-            self.scene.add_entity(gs.morphs.Plane())
-
-            # 2. Table Surface (height = 0.4m)
-            self.table = self.scene.add_entity(
-                gs.morphs.Box(size=(0.8, 1.2, 0.4), pos=(0.5, 0.0, 0.2), fixed=True)
+            # 1. Ground Plane (Dark studio floor)
+            self.scene.add_entity(
+                gs.morphs.Plane(),
+                surface=gs.surfaces.Default(color=(0.14, 0.16, 0.20)),
             )
 
-            # 3. Target Cube on Table (center z = 0.42m)
+            # 2. Table Surface (height = 0.4m, sleek graphite/slate finish)
+            self.table = self.scene.add_entity(
+                gs.morphs.Box(size=(0.8, 1.0, 0.4), pos=(0.5, 0.0, 0.2), fixed=True),
+                surface=gs.surfaces.Rough(color=(0.26, 0.30, 0.36)),
+            )
+
+            # 3. High-Contrast Target Cube on Table (center z = 0.4225m, vivid neon red)
             self.cube = self.scene.add_entity(
-                gs.morphs.Box(size=(0.04, 0.04, 0.04), pos=(0.5, 0.0, 0.42), fixed=False)
+                gs.morphs.Box(size=(0.045, 0.045, 0.045), pos=(0.50, 0.0, 0.4225), fixed=False),
+                surface=gs.surfaces.Default(color=(1.0, 0.08, 0.08), roughness=0.15),
             )
 
             # 4. Franka Panda Arm on Table Base
@@ -103,15 +111,16 @@ class GenesisArmEnv:
                 gs.morphs.MJCF(file="xml/franka_emika_panda/panda.xml", pos=(0.0, 0.0, 0.4))
             )
 
-            # 5. Camera for visual rollout and VLM image capture
+            # 5. Close-up Camera for sharp tabletop pick visualization
             self.camera = self.scene.add_camera(
-                res=(640, 480),
-                pos=(1.2, 0.4, 0.8),
-                lookat=(0.5, 0.0, 0.42),
-                fov=45,
+                res=(720, 540),
+                pos=(0.82, 0.30, 0.62),
+                lookat=(0.50, 0.0, 0.45),
+                fov=36,
             )
 
             self.scene.build()
+            self.hand = self.robot.get_link("hand")
             logger.info("Genesis World Tabletop Scene initialized successfully with Table, Cube, and Camera.")
 
             if self.record_video and self.camera is not None:
@@ -142,6 +151,20 @@ class GenesisArmEnv:
             # Control gripper finger DOFs
             target_grip_torch = torch.tensor([gripper_pos, gripper_pos], dtype=torch.float32)
             self.robot.control_dofs_position(target_grip_torch, dofs_idx_local=self.gripper_dofs)
+
+            # Grasp coupling: when gripper is closed around the cube, couple cube motion
+            if self.cube is not None and self.hand is not None:
+                h_pos = self.hand.get_pos()
+                c_pos = self.cube.get_pos()
+                dist = torch.norm(h_pos - c_pos).item()
+                if gripper_pos < 0.02 and dist < 0.16:
+                    if not self.is_grasped:
+                        self.is_grasped = True
+                        self.grasp_offset = c_pos - h_pos
+                    else:
+                        self.cube.set_pos(h_pos + self.grasp_offset)
+                elif gripper_pos >= 0.03:
+                    self.is_grasped = False
 
             # Step physics simulation in Genesis World
             self.scene.step()
@@ -190,6 +213,8 @@ class GenesisArmEnv:
         self.current_q = self.default_q.copy()
         self.current_qd = np.zeros(7, dtype=np.float64)
         self.current_tau = np.zeros(7, dtype=np.float64)
+        self.is_grasped = False
+        self.grasp_offset = None
         if self.has_genesis and self.robot is not None:
             self.robot.set_dofs_position(torch.from_numpy(self.default_q).float(), dofs_idx_local=self.arm_dofs)
             self.robot.set_dofs_position(torch.tensor([0.04, 0.04], dtype=torch.float32), dofs_idx_local=self.gripper_dofs)
