@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "genesis-kinetics"
+version = "0.1.0"
+description = "Asynchronous Disaggregated VLA Runtime & Closed-Loop Flight Recorder for Genesis World"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [
+    { name = "Genesis-Kinetics Authors" }
+]
+keywords = [
+    "robotics",
+    "vla",
+    "vision-language-action",
+    "genesis-world",
+    "quadrants",
+    "real-time",
+    "flight-recorder",
+    "embodied-ai"
+]
+dependencies = [
+    "numpy>=1.24.0",
+    "torch>=2.0.0",
+    "genesis-world>=1.4.0",
+]
+
+[project.scripts]
+genesis-kinetics-inspect = "experiments.counterfactual_inspector:main"
+genesis-kinetics-bench = "experiments.counterfactual_benchmark:main"
+genesis-kinetics-pick = "experiments.run_tabletop_pick:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["vla_runtime*", "telemetry*", "experiments*"]

@@ -1,5 +1,8 @@
-# Asynchronous Disaggregated VLA Runtime & Closed-Loop Flight Recorder
+# Genesis-Kinetics
 
+### *Asynchronous Disaggregated VLA Runtime & Closed-Loop Flight Recorder for Genesis World*
+
+[![Genesis-Kinetics](https://img.shields.io/badge/Genesis--Kinetics-v0.1.0-blue.svg)]()
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
 [![Genesis World](https://img.shields.io/badge/Genesis%20World-1.4.7-black.svg)](https://genesis-world.org/)
 [![Quadrants JIT](https://img.shields.io/badge/Quadrants-1.4.0-orange.svg)](https://github.com/Genesis-Embodied-AI/quadrants)
@@ -7,7 +10,7 @@
 [![Control Frequency](https://img.shields.io/badge/System%201-100%20Hz-green.svg)]()
 [![Hardware Backend](https://img.shields.io/badge/Backend-Apple%20Metal%20%2F%20CUDA-purple.svg)]()
 
-A production-grade reference runtime and real-time observability framework bridging large Vision-Language-Action (VLA) foundation models (OpenVLA, $\pi_0$, LeRobot) with high-frequency physics simulation in **Genesis World** and **Quadrants**.
+**Genesis-Kinetics** is a production-grade reference runtime and real-time observability framework bridging large Vision-Language-Action (VLA) foundation models (OpenVLA, $\pi_0$, LeRobot) with high-frequency physics simulation in **Genesis World** and **Quadrants**.
 
 ---
 

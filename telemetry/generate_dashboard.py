@@ -68,7 +68,7 @@ def generate_html_dashboard(
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Closed-Loop Flight Recorder & Counterfactual Dashboard</title>
+    <title>Genesis-Kinetics: Closed-Loop Flight Recorder & Counterfactual Dashboard</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {{
@@ -198,7 +198,7 @@ def generate_html_dashboard(
 <body>
     <div class="header">
         <div>
-            <h1>🚀 Asynchronous VLA Flight Recorder & Determinism Inspector</h1>
+            <h1>🚀 Genesis-Kinetics: Flight Recorder & Determinism Inspector</h1>
             <div style="font-size: 13px; color: var(--text-muted); margin-top: 4px;">
                 Microsecond-level telemetry correlation between System 2 VLM perception and System 1 Genesis World motor control.
             </div>
