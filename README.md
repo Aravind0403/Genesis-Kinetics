@@ -76,6 +76,12 @@ Frontier embodied AI architectures are transitioning away from monolithic polici
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
+> [!NOTE]
+> **IPC Concurrency Model & "Lockless" Guarantees**:
+> The inter-process communication layer between System 2 (5–10 Hz) and System 1 (100 Hz) uses a double-buffered Single-Producer Single-Consumer (SPSC) layout backed by POSIX shared memory (`multiprocessing.shared_memory`).
+> - **Zero OS Synchronization Contention**: Neither process ever acquires OS-level mutexes, semaphores, futexes, or file locks in the control loop. System 1 (100 Hz) is completely decoupled and never blocks waiting on a lock held by System 2.
+> - **Python Interpreter vs. Native Guarantees**: In this reference Python implementation, data integrity across the double-buffered slots is preserved via monotonic sequence counters (`write_cursor`, `read_cursor`) where the producer writes payload into an inactive slot before updating the cursor. For strict C++11 memory-model guarantees (`memory_order_release` / `memory_order_acquire` hardware memory barriers across arbitrary CPU cores), a native C++/Rust extension is the standard production deployment; our pure-Python implementation eliminates external C-compiler toolchain dependencies while upholding the non-blocking architecture.
+
 ---
 
 ## 3. Empirical Benchmarks & Quantitative Findings
@@ -100,6 +106,12 @@ Our Async Runtime (+150ms Spikes)   |              82.38 |             55.54 |  
 * **Elimination of Trajectory Stalls**: The synchronous baseline spent **10.0% of its run duration completely frozen**, while our asynchronous runtime maintained smooth control with only **5.2% degraded ticks**, smoothly recovering when fresh chunks arrived.
 * **Microsecond Flight Recording**: Captured 329 microsecond-precision `.tick` binary records correlating VLM compute latency directly with motor torque responses.
 
+> [!NOTE]
+> **Actuator Torque Dynamics & Damped Continuation**:
+> Under adversarial +150 ms spikes, our asynchronous runtime records higher peak torque ($55.54\text{ N}\cdot\text{m}$) than the synchronous baseline ($33.35\text{ N}\cdot\text{m}$). This is an intentional and principled robotics engineering trade-off:
+> - The **Synchronous Baseline** exhibits lower commanded torque during starvation because it abruptly halts target position updates—freezing in place or collapsing into unpowered compliance. While this minimizes instantaneous commanded effort, it introduces violent velocity discontinuities when delayed chunks arrive ($111.85\text{ rad/s}^3$ jerk) and causes the robot to drop grasped payloads under gravity.
+> - **Genesis-Kinetics** commits active dynamic braking torque ($52–55\text{ N}\cdot\text{m}$) via quintic polynomial deceleration while actively sustaining joint gravity compensation. Committing controlled actuator torque to preserve mechanical momentum continuity and prevent dropping objects is far superior to the kinematic shock of a "freeze-then-catch-up" collapse.
+
 ---
 
 ### Benchmark B: Zero-Copy DLPack vs. Copy-Based IPC (25,000 Cycles)
@@ -123,9 +135,9 @@ Zero-Copy DLPack Streaming       |         2.628 µs     |       0.00 MB   |    
 ---
 
 ### Benchmark C: Genesis World 3D Tabletop Rollout
-* **Franka Emika Panda Tabletop Scene**: Executed in Genesis World 1.4.7 natively accelerated by Apple Metal.
-* **4-Phase Rollout**: Pre-grasp approach $\to$ descend $\to$ grasp $\to$ lift red cube.
-* **Result**: 250 control ticks executed at 100 Hz with **0 missed deadlines**, rendered to `tabletop_cube_pick.mp4` (460.9 KB, 50 FPS).
+* **Franka Emika Panda Tabletop Scene**: Executed in Genesis World 1.4.7 natively accelerated by Apple Metal (`gs.metal`).
+* **5-Phase Rollout**: Pre-grasp approach $\to$ descend $\to$ grasp $\to$ 14.8 cm vertical lift $\to$ hold.
+* **Result**: 250 control ticks executed at 100 Hz with **0 missed deadlines**, rendered to `tabletop_cube_pick.mp4` (1.1 MB, 720x540, 50 FPS).
 
 ---
 
@@ -156,7 +168,7 @@ Features:
 Genesis_AI/
 ├── vla_runtime/
 │   ├── types.py                     # Data contracts, ActionChunkPacket, ControllerState
-│   ├── buffer.py                    # Lock-free double-buffered SPSC ring buffer (POSIX shm)
+│   ├── buffer.py                    # Lockless double-buffered SPSC ring buffer (POSIX shm)
 │   ├── trajectory.py                # Elapsed-step truncation, exponential ensembling & quintic dampener
 │   ├── disaggregated_serving.py     # Chunked vision prefill + zero-copy KV transfer + action head
 │   ├── system1_controller.py        # 100 Hz real-time controller loop paced by monotonic clock
@@ -173,6 +185,7 @@ Genesis_AI/
 │   ├── counterfactual_benchmark.py  # Automated Sync vs. Async 4-way stress test
 │   ├── counterfactual_inspector.py  # Interactive terminal timeline scrubber & causal diagnoser
 │   ├── benchmark_dlpack_zerocopy.py # Zero-copy DLPack vs copy-based IPC microbenchmark
+│   ├── run_disaggregated_vla.py     # End-to-end disaggregated serving pipeline demonstration
 │   └── run_tabletop_pick.py         # 3D closed-loop tabletop cube-picking simulation rollout
 ├── tests/
 │   ├── test_vla_core.py             # Unit tests for ring buffer, ensembling, damping & Genesis
