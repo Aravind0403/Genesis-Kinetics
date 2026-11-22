@@ -1,6 +1,6 @@
 # Genesis-Kinetics
 
-### *Asynchronous Action-Chunk Runtime & Deterministic Flight Recorder for Genesis World*
+### *Asynchronous Action-Chunk Runtime & Timestamped Flight Recorder for Genesis World*
 
 [![Genesis-Kinetics](https://img.shields.io/badge/Genesis--Kinetics-v0.1.0-blue.svg)]()
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -10,22 +10,22 @@
 [![Control Frequency](https://img.shields.io/badge/System%201-100%20Hz-green.svg)]()
 [![Hardware Backend](https://img.shields.io/badge/Backend-Apple%20Metal%20%2F%20CUDA-purple.svg)]()
 
-**Genesis-Kinetics** is an open-source experimental asynchronous action-chunk runtime and deterministic flight recorder for studying compute, scheduling, and network latency disturbances in **Genesis World** (1.4.7) physics simulation.
+**Genesis-Kinetics** is an experimental runtime for studying how injected policy-computation delays affect action execution in Genesis World simulation. It combines a synthetic action-chunk worker, asynchronous execution, trajectory alignment, fallback behaviour, and timestamped telemetry. The current experiments use a scripted manipulation task on Apple Silicon; they do not demonstrate learned-VLA task performance.
 
 ---
 
 ## 1. Why This Runtime Exists
 
-### The Latency Vulnerability in Hierarchical VLA Control
-Frontier embodied AI architectures are increasingly adopting hierarchical control: large vision-language models planning high-level intent at 5–10 Hz, paired with agile on-device action heads executing trajectories at 100–500 Hz.
+### Latency Disturbances in Action-Chunk Execution
+Modern hierarchical embodied control architectures pair high-level perception policies planning intent at 5–10 Hz with low-level motor controllers executing trajectories at 100–500 Hz. Recent open-source frameworks (such as LeRobot with Real-Time Chunking [RTC], OpenVLA, and $\pi_0$) have demonstrated the value of asynchronous execution and chunk buffering.
 
-Recent open-source frameworks (such as LeRobot with Real-Time Chunking [RTC], OpenVLA, and $\pi_0$) have demonstrated the value of asynchronous inference and chunk buffering. However, robotics teams deploying hierarchical policies in dynamic simulation still face three critical systems challenges:
+However, robotics researchers studying action-chunk policies under variable system latency face three key empirical challenges:
 
 1. **Action Starvation Under Compute Stalls**: When an inference pass suffers an unexpected tail latency delay (due to network transfer, thermal throttling, or host scheduler contention), action chunk buffers deplete, causing robots to freeze or drop grasped payloads.
 2. **Discontinuity Across Chunk Boundaries**: Stitching discrete chunk arrivals into continuous motor commands requires smooth ensembling and deterministic inertial fallback when deadlines are missed.
-3. **The Causal Diagnostic Blindspot**: When a manipulation policy fails in simulation (e.g., dropping a cube), post-hoc analysis rarely reveals whether the failure stemmed from a flawed model prediction, joint velocity saturation, or a missed 10 ms control deadline caused by host OS scheduler jitter.
+3. **The Causal Diagnostic Blindspot**: When a manipulation policy fails in simulation (e.g., dropping a cube), post-hoc analysis rarely reveals whether the failure stemmed from a flawed model prediction, joint velocity saturation, or a missed control deadline caused by host OS scheduler jitter.
 
-Genesis-Kinetics provides an empirical fault-injection testbed and microsecond-level flight recorder to systematically benchmark and diagnose these failure modes inside Genesis World simulation.
+Genesis-Kinetics provides an empirical fault-injection testbed and timestamped flight recorder to systematically benchmark and diagnose these failure modes inside Genesis World simulation.
 
 ---
 
@@ -37,10 +37,10 @@ To ensure strict engineering transparency, the table below outlines what is curr
 | :--- | :--- | :--- |
 | **Policy Worker (`system2_worker.py`)** | Synthetic / Parameterized Policy | Generates 50-step action chunks at 5–10 Hz with configurable latency distributions (Gaussian nominal, log-normal jitter, and injected 150 ms stalls). Enables reproducible systems benchmarking independent of specific GPU weights. |
 | **Simulation Environment (`genesis_env.py`)** | Closed-Loop Genesis Simulation | Franka Emika Panda (7 arm DOFs + 2 gripper DOFs) performing tabletop manipulation in Genesis World 1.4.7 with Apple Metal acceleration (`gs.metal`). |
-| **Tabletop Task (`run_tabletop_pick.py`)** | Scripted Waypoint Trajectory (IK) | 5-phase pick-and-lift task (approach $\to$ descend $\to$ grasp $\to$ 14.8 cm lift $\to$ hold) used as an integration testbed to measure tracking distortion under injected compute stalls. |
+| **Tabletop Task (`run_tabletop_pick.py`)** | Scripted Waypoint Trajectory (IK) | 5-phase pick-and-lift task (approach $\to$ descend $\to$ grasp $\to$ 14.8 cm lift $\to$ hold) used as an integration testbed to measure tracking distortion under injected compute stalls. Does not evaluate learned neural network policies. |
 | **IPC Transport (`buffer.py`)** | POSIX Shared Memory (`multiprocessing.shared_memory`) | Double-buffered SPSC ring buffer with monotonic sequence counters. Non-blocking hot path (no OS mutexes or semaphores acquired in the 100 Hz control loop). |
-| **Tensor Interoperability (`benchmark_dlpack_zerocopy.py`)** | In-Process DLPack Memory Sharing | Direct zero-copy pointer sharing between Genesis C++/Metal memory structures and PyTorch tensors, eliminating intermediate NumPy heap allocations. |
-| **Telemetry & Flight Recorder (`telemetry/`)** | Non-blocking UDS Binary Recorder | Microsecond `.tick` binary records streaming to disk via `/tmp/rtm.sock`, capturing the full causal timeline from camera ingest to motor torque impulse. |
+| **Tensor Interoperability (`benchmark_dlpack_zerocopy.py`)** | In-Process DLPack Memory Sharing | Direct pointer sharing between Genesis C++/Metal memory structures and PyTorch tensors, eliminating intermediate NumPy copies. Tested in-process; not a cross-process transport. |
+| **Telemetry & Flight Recorder (`telemetry/`)** | Non-blocking UDS Binary Recorder | Microsecond `.tick` binary records streaming to disk via `/tmp/rtm.sock`, capturing timing stamps for ingest, simulated delay, queue handover, and joint torque dynamics. |
 | **Hardware Backends** | Tested on Apple Silicon Metal | Verified on macOS Apple Silicon Metal (`gs.metal`); architectural support for Linux CUDA (`gs.cuda`). |
 
 ---
@@ -49,85 +49,70 @@ To ensure strict engineering transparency, the table below outlines what is curr
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           System 2: Disaggregated VLA                       │
-│                (Separate Process, 5 - 10 Hz, GPU Worker)                    │
+│                       Synthetic Action-Chunk Worker                         │
+│                      (Configurable Computation Delays)                      │
 │                                                                             │
-│  Camera Frame [t_obs] ──► Chunked Vision Prefill ──► Zero-Copy KV Transfer  │
-│                                                            │                │
-│                                                            ▼                │
-│                             Agile Action Head ──► Action Chunk (T = 50)     │
-└───────────────────────────────────────────────┬─────────────────────────────┘
-                                                │ Non-Blocking IPC (Double-Buffered SPSC POSIX shm)
-                                                │ Packet: {t_obs, seq_id, chunk[50, 7]}
-                                                ▼
+│  Scripted Trajectory Generator ──► Parameterized Latency Distribution       │
+│                                    (Gaussian, Log-Normal, Injected Stalls)  │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼ Timestamped Action Chunk {t_obs, seq_id, chunk[50, 7]}
+                                       │
+┌──────────────────────────────────────┴──────────────────────────────────────┐
+│                   Double-Buffered Shared-Memory Transport                   │
+│                  (POSIX Shared Memory, Non-Blocking Hot Path)               │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │
+                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                           System 1: Motor Controller                        │
-│                (Separate Real-Time Process, 100 Hz, Genesis)                │
+│                            Control-Loop Process                             │
+│                   (Genesis World Simulation Step @ 100 Hz)                  │
 │                                                                             │
-│  ┌───────────────────────┐   ┌────────────────────────┐                     │
-│  │ Chunk Time-Alignment  │──►│ Exponential Ensembler  │                     │
-│  │  - Drop elapsed steps │   │  - Blend overlapping   │                     │
-│  │  - Check buffer depth │   │    trajectories        │                     │
-│  └───────────┬───────────┘   └───────────┬────────────┘                     │
-│              │ (Buffer empty?)           │ (Buffer valid)                   │
-│              ▼                           ▼                                  │
-│  ┌───────────────────────┐   ┌────────────────────────┐                     │
-│  │ Damped Inertial Hold  │   │ Zero-Copy DLPack       │                     │
-│  │ (Quintic Damping +    │   │ arr.to_torch(copy=False│                     │
-│  │  Gravity Comp)        │   │ Native Memory Sharing) │                     │
-│  └───────────┬───────────┘   └───────────┬────────────┘                     │
-│              │                           │                                  │
-│              └───────────────┬───────────┘                                  │
-│                              ▼                                              │
-│               Genesis World Physics Step (100 Hz)                           │
-│               Franka Emika Panda (7 Arm DOFs + 2 Gripper DOFs)              │
-└──────────────────────────────┬──────────────────────────────────────────────┘
-                               │ Non-blocking Telemetry (UDS Socket: /tmp/rtm.sock)
-                               ▼
+│   Chunk Time-Alignment ──► Trajectory Blending / Fallback ──► Genesis Step   │
+│   (Drop Elapsed Steps)     (Exponential Blend / Damping)    (Franka Panda)  │
+│                                                                      │      │
+│                            [In-Process DLPack Tensor Interop] ◄──────┘      │
+└──────────────────────────────────────┬──────────────────────────────────────┘
+                                       │ Non-blocking Socket (/tmp/rtm.sock)
+                                       ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
-│                 Observability Layer (real-time-monitor)                     │
+│                            Timestamped Telemetry                            │
 │                                                                             │
-│  UDS `/tmp/rtm.sock` ──► Binary `.tick` Stream ──► Interactive Web Dashboard│
-│  Events: [CAMERA_INGEST, VLM_PREFILL, CHUNK_GEN, IPC_HANDOVER, MOTOR_TICK] │
+│     Binary .tick Recorder ──► Trace Inspector ──► Web Dashboard             │
+│     Events: [INGEST, IPC_HANDOVER, MOTOR_TICK, QUEUE_DEPTH, TORQUE_NORM]    │
 └─────────────────────────────────────────────────────────────────────────────┘
 ```
 
 > [!NOTE]
-> **IPC Concurrency Model & Guarantees**:
-> The inter-process communication layer between System 2 (5–10 Hz) and System 1 (100 Hz) uses a double-buffered Single-Producer Single-Consumer (SPSC) layout backed by POSIX shared memory (`multiprocessing.shared_memory`).
-> - **Zero OS Mutex Contention**: Neither process acquires OS mutexes, semaphores, futexes, or file locks in the control loop. System 1 (100 Hz) is decoupled and never blocks waiting on a lock held by System 2.
-> - **Slot Ownership & Snapshot Copying**: The producer writes new chunk payloads into the inactive slot before updating the monotonic `write_cursor`. The consumer inspects the cursor, copies a local snapshot of the active slot into process-local memory, and verifies sequence continuity.
-> - **Python Interpreter vs. Native Guarantees**: In this pure-Python reference implementation, synchronization relies on atomic integer cursor assignments within the CPython runtime. For strict C++11 memory-model guarantees (`memory_order_release` / `memory_order_acquire` hardware memory fences across arbitrary CPU cores on multi-socket NUMA systems), a compiled C++/Rust extension is standard in production. Our pure-Python implementation provides an accessible, non-blocking baseline without requiring external C toolchain compilation.
+> **IPC Concurrency Model & Experimental Limitations**:
+> The prototype uses double-buffered shared-memory slots and sequence checks without acquiring OS mutexes on the control hot path. The implementation’s cross-process atomicity, publication ordering, and slot-reuse correctness have not yet been formally established. It should therefore be treated as an experimental transport rather than a verified lock-free queue.
 
 ---
 
 ## 4. Empirical Benchmarks & Quantitative Findings
 
 ### Benchmark A: Stress-Test Under Injected Latency Stalls (+150 ms)
-To evaluate controller robustness against tail-latency delays, we benchmark our asynchronous runtime against a standard synchronous chunk-execution baseline (where the controller halts and waits synchronously when the policy buffer empties). Both baselines operate with identical PD controller gains, gravity compensation, and Genesis physics parameters under an injected +150 ms compute stall workload:
+To evaluate controller behaviour under tail-latency delays, we benchmark the asynchronous configuration against a synchronous chunk-execution baseline (where the controller halts and waits synchronously when the policy buffer empties). Both baselines operate with identical PD controller gains, gravity compensation, and Genesis physics parameters under an injected +150 ms compute stall workload:
 
 ```
 ================================================================================
  📊 COUNTERFACTUAL STRESS-TEST BENCHMARK RESULTS
 ================================================================================
-Configuration                       | Mean Jerk (rad/s³) | Peak Torque (N·m) | Miss / Degraded Rate (%)
+Configuration                       | Mean Jerk (rad/s³) | Peak Torque (N·m) | Waiting / Fallback Occupancy (%)
 --------------------------------------------------------------------------------
-Sync Baseline (Nominal)             |              63.79 |             29.80 |           4.4% (Miss)
-Sync Baseline (+150ms Spikes)       |             111.85 |             33.35 |          10.0% (Miss)
-Our Async Runtime (Nominal)         |              66.90 |             52.44 |           4.0% (Degraded)
-Our Async Runtime (+150ms Spikes)   |              82.38 |             55.54 |           5.2% (Degraded)
+Sync Baseline (Nominal)             |              63.79 |             29.80 |           4.4% (Waiting)
+Sync Baseline (+150ms Spikes)       |             111.85 |             33.35 |          10.0% (Waiting)
+Our Async Runtime (Nominal)         |              66.90 |             52.44 |           4.0% (Fallback)
+Our Async Runtime (+150ms Spikes)   |              82.38 |             55.54 |           5.2% (Fallback)
 ================================================================================
 ```
 
 #### Analysis & Control Trade-Offs:
-* **26.3% Reduction in Mechanical Jerk Under Stalls**: When an injected +150 ms stall occurs, the synchronous baseline freezes in place, causing violent joint velocity discontinuities ($111.85\text{ rad/s}^3$) upon resuming. Our asynchronous runtime smoothly blends overlapping chunk horizons and transitions into quintic velocity deceleration ($82.38\text{ rad/s}^3$).
-* **Metric Definitions**:
-  * *Sync Miss Rate (10.0%)*: The percentage of total control cycles where the robot was completely frozen waiting for delayed inference.
-  * *Async Degraded Rate (5.2%)*: The percentage of control cycles where the action buffer was starved and the controller operated in inertial quintic damping mode.
-* **Actuator Torque Dynamics & Damped Continuation**:
-  Under injected stalls, the asynchronous runtime commands higher peak torque ($55.54\text{ N}\cdot\text{m}$) than the synchronous baseline ($33.35\text{ N}\cdot\text{m}$). This is an intentional control engineering trade-off:
-  - The **Synchronous Baseline** exhibits lower instantaneous commanded torque during starvation because it abruptly halts target position updates. However, this introduces severe kinematic shock when delayed chunks arrive ($111.85\text{ rad/s}^3$ jerk) and causes payload slippage under gravity.
-  - **Genesis-Kinetics** commits dynamic braking torque via quintic polynomial deceleration while actively sustaining joint gravity compensation. Committing controlled actuator torque to preserve mechanical momentum continuity prevents payload loss. All measured torques remain comfortably within the Franka Emika Panda rated joint torque limits (Joints 1–4: 87 N·m, Joints 5–7: 12 N·m).
+* **Jerk vs. Commanded Torque Trade-Off**: Under the reported injected-stall workload, the asynchronous configuration reduced measured mean jerk from 111.85 to 82.38 rad/s³ while increasing peak commanded torque norm from 33.35 to 55.54 N·m. These results describe a continuity-versus-effort trade-off in this experiment; they do not independently establish task-success improvements, actuator-limit compliance, or safe behaviour.
+* **Controller Occupancy Metrics**:
+  * *Synchronous Waiting Occupancy (10.0%)*: The percentage of total control cycles where the robot was completely frozen waiting for delayed inference.
+  * *Asynchronous Fallback Occupancy (5.2%)*: The percentage of control cycles where the action buffer was starved and the controller operated in inertial quintic damping mode.
+  Synchronous waiting occupancy and asynchronous fallback occupancy are reported separately because they represent fundamentally different controller states.
 
 ---
 
@@ -141,57 +126,52 @@ Benchmarking in-process memory pointer sharing between Genesis World physics str
 Pattern                          | Latency per Tick   | Bytes Copied   | Effective Throughput
 ------------------------------------------------------------------------------------
 Copy-Based (Standard Tensor Copy)|         3.368 µs     |      33.38 MB   |      396.4 MB/s
-Zero-Copy DLPack Streaming       |         2.628 µs     |       0.00 MB   |      508.0 MB/s
+DLPack In-Process Pointer Sharing|         2.628 µs     |       0.00 MB   |      508.0 MB/s
 ====================================================================================
 ```
 
-* **22.0% Overhead Reduction**: Direct memory pointer projection via DLPack avoids intermediate memory copying ($3.368\,\mu\text{s} \to 2.628\,\mu\text{s}$, a saving of $0.740\,\mu\text{s}$ per tick).
-* **Heap Allocation Avoidance**: Eliminates **33.4 MB** of temporary Python heap allocations over 25,000 cycles, helping mitigate Python garbage collection pauses during high-frequency control loops.
-* **Budget Context**: At 100 Hz ($10,000\,\mu\text{s}$ budget), tensor handover consumes less than **0.03% of the control loop budget**.
+* **Measured Latency Reduction**: The microbenchmark measured tensor-handover overhead of 3.368 μs for the copy-based path and 2.628 μs for the DLPack path. The measured saving was 0.740 μs per operation.
+* **Scope of Measurement**: The reported copying avoided is an architectural property of direct pointer projection; it is not a direct measurement of Python allocation volume, garbage-collection pauses, or end-to-end control performance.
+* **Budget Context**: At 100 Hz (10,000 μs loop deadline), in-process tensor handover consumes less than 0.03% of the control loop budget.
 
 ---
 
 ### Benchmark C: Genesis World 3D Tabletop Rollout
 * **Simulation Setup**: Franka Emika Panda tabletop pick-and-lift task executed in Genesis World 1.4.7 natively accelerated by Apple Metal (`gs.metal`).
-* **5-Phase Trajectory**: Pre-grasp approach $\to$ descend $\to$ grasp $\to$ 14.8 cm vertical lift $\to$ hold.
-* **Control Performance**: 250 control ticks executed at simulated 100 Hz (10 ms physics step) with 0 deadline misses, recorded to `tabletop_cube_pick.mp4` (1.1 MB, 720x540, 50 FPS).
+* **5-Phase Scripted Trajectory**: Pre-grasp approach $\to$ descend $\to$ grasp $\to$ 14.8 cm vertical lift $\to$ hold.
+* **Execution**: The scripted rollout completed 250 simulation steps with a configured physics timestep of 10 ms, covering 2.5 seconds of simulated time. Wall-clock deadline behaviour should be reported separately with its measurement definition. Rendered rollout available in `tabletop_cube_pick.mp4` (1.1 MB, 720x540, 50 FPS).
 
 ---
 
-## 5. Closed-Loop Flight Recorder & Causal Diagnostics
+## 5. Timestamped Flight Recorder & Diagnostic Tooling
 
-The core contribution of Genesis-Kinetics is the **Closed-Loop Flight Recorder**—a microsecond-precision telemetry subsystem designed to resolve the diagnostic blindspot in embodied AI simulation.
+The flight recorder helps investigate the relationship between action age, buffer starvation, controller state, and simulated task outcomes. A trace can identify candidate failure mechanisms; stronger causal attribution requires controlled comparisons.
 
-### Telemetry Packet Provenance Schema
-Every control cycle emits a structured binary `.tick` packet capturing complete end-to-end timing provenance:
+### Telemetry Packet Schema
+Every control cycle emits a structured binary `.tick` packet capturing timing and state telemetry:
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
 | `tick_id` | `uint64` | Monotonic control loop step counter |
 | `t_obs` | `float64` | Observation capture timestamp (monotonic microseconds) |
-| `t_prefill_end` | `float64` | Vision prefill encoder completion timestamp |
+| `t_prefill_end` | `float64` | Simulated perception completion timestamp |
 | `t_publish` | `float64` | Action chunk IPC publication timestamp |
-| `t_motor` | `float64` | Motor controller deadline execution timestamp |
+| `t_motor` | `float64` | Motor controller execution timestamp |
 | `buffer_horizon` | `int32` | Number of unexecuted action steps remaining in the queue |
 | `controller_state`| `enum` | Controller mode (`NOMINAL`, `BLENDING`, `DAMPED_HOLD`, `BUFFER_EMPTY`) |
-| `torque_norm` | `float32` | Instantaneous L2 norm of commanded joint torques (N·m) |
-| `jerk` | `float32` | Instantaneous mechanical jerk (rad/s³) |
+| `torque_norm` | `float32` | Commanded joint torque L2 norm (N·m) |
+| `jerk` | `float32` | Joint jerk estimate (rad/s³) |
 
-### Isolating Causal Root Causes
-When a robot fails to grasp or lift an object in simulation, the flight recorder allows engineers to definitively separate algorithmic policy errors from systems and scheduling latency:
+### Illustrative Diagnostic Scenario (Candidate Mechanism Identification)
+When a robot fails to grasp or lift an object in simulation, the flight recorder allows engineers to inspect the temporal correlation between compute stalls and physical state transitions:
 
 ```
-[SCENARIO: ROBOT DROPS PAYLOAD AT t = 1.84s]
-├── Without Flight Recorder:
-│   └── Engineer assumes policy network output an incorrect joint position.
-│       Action: Weeks spent fine-tuning VLA weights or collecting new demonstrations.
-│
-└── With Genesis-Kinetics Flight Recorder:
-    ├── Step 142 (t = 1.42s): System 2 begins VLM inference pass.
-    ├── Step 157 (t = 1.57s): Injected stall delays chunk arrival by +150 ms.
-    ├── Step 168 (t = 1.68s): Buffer horizon drops to 0. Controller enters DAMPED_HOLD.
-    └── Step 184 (t = 1.84s): Cube slips due to prolonged buffer starvation during lift.
-    └── Causal Conclusion: Systems latency failure (tail compute delay), NOT a policy defect.
+[ILLUSTRATIVE SCENARIO: OBSERVED PAYLOAD SLIPPAGE AT t = 1.84s]
+├── Step 142 (t = 1.42s): Upstream worker begins simulated inference delay.
+├── Step 157 (t = 1.57s): Injected stall delays chunk arrival by +150 ms.
+├── Step 168 (t = 1.68s): Buffer horizon drops to 0. Controller transitions to DAMPED_FALLBACK.
+└── Step 184 (t = 1.84s): Object slip coincides with prolonged buffer starvation.
+└── Candidate Failure Mechanism: Action starvation under compute delay (requires controlled ablation to verify).
 ```
 
 ---
@@ -199,7 +179,7 @@ When a robot fails to grasp or lift an object in simulation, the flight recorder
 ## 6. Interactive Flight Inspector & Web Dashboard
 
 ### 1. Interactive Terminal Rewinder
-Run the interactive scrubber to step through rollout history, inspect latency milestones, and view causal state transitions:
+Run the interactive scrubber to step through rollout history, inspect latency milestones, and view state transitions:
 ```bash
 python3 experiments/counterfactual_inspector.py --auto
 ```
@@ -223,24 +203,24 @@ Features:
 Genesis_AI/
 ├── vla_runtime/
 │   ├── types.py                     # Data contracts, ActionChunkPacket, ControllerState
-│   ├── buffer.py                    # Non-blocking double-buffered SPSC ring buffer (POSIX shm)
+│   ├── buffer.py                    # Double-buffered shared-memory transport (POSIX shm)
 │   ├── trajectory.py                # Elapsed-step truncation, exponential ensembling & quintic dampener
-│   ├── disaggregated_serving.py     # Chunked vision prefill + zero-copy KV transfer + action head
-│   ├── system1_controller.py        # 100 Hz real-time controller loop paced by monotonic clock
-│   ├── system2_worker.py            # Isolated-process perception server with latency profiles
+│   ├── disaggregated_serving.py     # Architectural demonstration of chunked vision prefill + action head
+│   ├── system1_controller.py        # 100 Hz simulation controller loop paced by monotonic clock
+│   ├── system2_worker.py            # Synthetic perception worker with parameterized latency distributions
 │   └── genesis_env.py               # Genesis World 1.4.7 + Franka Panda tabletop simulation
 ├── telemetry/
 │   ├── rtm_probe.py                 # Non-blocking UDS client transmitting binary .tick records
 │   ├── recorder.py                  # Flight recorder daemon streaming events to disk
-│   ├── visualizer.py                # Latency percentiles & deadline miss reporter
+│   ├── visualizer.py                # Latency percentiles & occupancy reporter
 │   ├── generate_dashboard.py        # Generates standalone interactive dashboard.html
 │   └── dashboard.html               # Interactive web flight recorder dashboard
 ├── experiments/
 │   ├── latency_profiles.py          # Nominal, network jitter, and adversarial stall distributions
 │   ├── counterfactual_benchmark.py  # Automated Sync vs. Async 4-way stress test
-│   ├── counterfactual_inspector.py  # Interactive terminal timeline scrubber & causal diagnoser
-│   ├── benchmark_dlpack_zerocopy.py # Zero-copy DLPack vs copy-based IPC microbenchmark
-│   ├── run_disaggregated_vla.py     # End-to-end disaggregated serving pipeline demonstration
+│   ├── counterfactual_inspector.py  # Interactive terminal timeline scrubber
+│   ├── benchmark_dlpack_zerocopy.py # DLPack pointer sharing vs copy-based microbenchmark
+│   ├── run_disaggregated_vla.py     # End-to-end serving pipeline demonstration
 │   └── run_tabletop_pick.py         # 3D closed-loop tabletop cube-picking simulation rollout
 ├── tests/
 │   ├── test_vla_core.py             # Unit tests for ring buffer, ensembling, damping & Genesis
@@ -277,7 +257,7 @@ python3 experiments/counterfactual_benchmark.py
 python3 experiments/benchmark_dlpack_zerocopy.py
 ```
 
-### 4. Run Disaggregated VLA Serving Demonstration
+### 4. Run Disaggregated Serving Demonstration
 ```bash
 python3 experiments/run_disaggregated_vla.py
 ```
