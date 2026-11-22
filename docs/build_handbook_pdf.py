@@ -2,6 +2,7 @@
 """
 Genesis-Kinetics: Engineering Handbook & Ready Reckoner Builder.
 Compiles a comprehensive, top-to-bottom masterclass handbook into HTML and PDF.
+Uses clean typography, styled math-blocks, and semantic HTML entities (no broken raw LaTeX).
 """
 
 import os
@@ -16,7 +17,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 <style>
   @page {
     size: A4;
-    margin: 18mm 16mm 18mm 16mm;
+    margin: 16mm 16mm 16mm 16mm;
     @bottom-right {
       content: "Page " counter(page) " of " counter(pages);
       font-size: 8pt;
@@ -33,7 +34,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     color: #1e293b;
     line-height: 1.55;
-    font-size: 10pt;
+    font-size: 9.5pt;
     margin: 0;
     padding: 0;
     background: #ffffff;
@@ -61,7 +62,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   }
 
   .cover-title {
-    font-size: 28pt;
+    font-size: 26pt;
     font-weight: 800;
     color: #0f172a;
     letter-spacing: -0.03em;
@@ -70,7 +71,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   }
 
   .cover-subtitle {
-    font-size: 14pt;
+    font-size: 13pt;
     color: #475569;
     font-weight: 400;
     max-width: 600px;
@@ -94,33 +95,33 @@ HTML_CONTENT = """<!DOCTYPE html>
   }
 
   h1 {
-    font-size: 18pt;
+    font-size: 16pt;
     font-weight: 800;
     color: #0f172a;
     border-bottom: 2px solid #e2e8f0;
-    padding-bottom: 6px;
-    margin-top: 32px;
-    margin-bottom: 14px;
+    padding-bottom: 5px;
+    margin-top: 28px;
+    margin-bottom: 12px;
     letter-spacing: -0.02em;
     page-break-after: avoid;
   }
 
   h2 {
-    font-size: 13pt;
+    font-size: 12pt;
     font-weight: 700;
     color: #1e3a8a;
-    margin-top: 22px;
+    margin-top: 20px;
     margin-bottom: 8px;
     letter-spacing: -0.01em;
     page-break-after: avoid;
   }
 
   h3 {
-    font-size: 10.5pt;
+    font-size: 10pt;
     font-weight: 600;
     color: #334155;
-    margin-top: 14px;
-    margin-bottom: 6px;
+    margin-top: 12px;
+    margin-bottom: 5px;
     page-break-after: avoid;
   }
 
@@ -168,7 +169,7 @@ HTML_CONTENT = """<!DOCTYPE html>
     padding: 10px 12px;
     border-radius: 6px;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 8pt;
+    font-size: 7.5pt;
     line-height: 1.45;
     overflow-x: auto;
     margin: 10px 0;
@@ -177,7 +178,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 
   code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    font-size: 8.5pt;
+    font-size: 8pt;
     background: #f1f5f9;
     color: #0f172a;
     padding: 1px 4px;
@@ -221,14 +222,33 @@ HTML_CONTENT = """<!DOCTYPE html>
     background: #f8fafc;
     border: 1px solid #cbd5e1;
     border-radius: 6px;
-    padding: 12px;
-    margin: 12px 0;
+    padding: 10px;
+    margin: 10px 0;
     font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, monospace;
     font-size: 7.5pt;
     line-height: 1.35;
     white-space: pre;
     color: #0f172a;
     page-break-inside: avoid;
+  }
+
+  .math-block {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 3px solid #4f46e5;
+    padding: 8px 14px;
+    margin: 10px 0;
+    font-family: "Cambria Math", "Latin Modern Math", Georgia, serif;
+    font-size: 10pt;
+    color: #0f172a;
+    text-align: center;
+    border-radius: 4px;
+    page-break-inside: avoid;
+  }
+
+  .math-var {
+    font-family: "Cambria Math", "Latin Modern Math", Georgia, serif;
+    font-style: italic;
   }
 
   .two-col {
@@ -261,7 +281,7 @@ HTML_CONTENT = """<!DOCTYPE html>
   <div class="cover-title">Genesis-Kinetics</div>
   <div class="cover-subtitle">The Systems Engineering Handbook & Ready Reckoner: Top-to-Bottom Architecture of VLAs, Physics Simulation, Real-Time Control, and Causal Telemetry</div>
   <div class="cover-divider"></div>
-  <p style="text-align: center; max-width: 500px; margin: 0 auto; color: #475569; font-size: 9.5pt;">
+  <p style="text-align: center; max-width: 500px; margin: 0 auto; color: #475569; font-size: 9pt;">
     A practical, unvarnished guide designed to bridge the cognitive gap between Large Language Model inference infrastructure and high-frequency robotic physics control.
   </p>
   <div class="cover-meta">
@@ -280,7 +300,7 @@ HTML_CONTENT = """<!DOCTYPE html>
 If you come from backend, LLM serving, or distributed systems, embodied AI can initially feel disorienting. In cloud computing, latency is about user experience: if an LLM responds in 150 ms versus 300 ms, the user merely waits slightly longer for the next token. 
 </p>
 <p>
-In physical robotics, <strong>latency is kinetic</strong>. A physical robotic arm has mass, inertia, momentum, and is continuously subjected to Earth's $9.81\text{ m/s}^2$ gravitational acceleration. If a computer controlling a robotic motor stops sending commands for even 100 milliseconds, physical forces take over: the arm collapses into the table, motor gear teeth grind under sudden deceleration, or a grasped fragile payload slips from the gripper.
+In physical robotics, <strong>latency is kinetic</strong>. A physical robotic arm has mass, inertia, momentum, and is continuously subjected to Earth's 9.81 m/s<sup>2</sup> gravitational acceleration. If a computer controlling a robotic motor stops sending commands for even 100 milliseconds, physical forces take over: the arm collapses into the table, motor gear teeth grind under sudden deceleration, or a grasped fragile payload slips from the gripper.
 </p>
 
 <div class="callout">
@@ -369,16 +389,16 @@ To understand what is happening inside the model worker, we must distinguish bet
 
 <h2>2.2 Anatomy of a Modern VLA Pipeline</h2>
 <p>
-A modern VLA model (such as OpenVLA or Physical Intelligence's $\pi_0$) consists of four distinct internal stages:
+A modern VLA model (such as OpenVLA or Physical Intelligence's &pi;<sub>0</sub>) consists of four distinct internal stages:
 </p>
 <ol>
-  <li><strong>Vision Patch Tokenizer:</strong> Slices a $480 \times 480$ RGB camera frame into small $14 \times 14$ patches, producing 256 to 576 continuous visual tokens.</li>
+  <li><strong>Vision Patch Tokenizer:</strong> Slices a 480 &times; 480 RGB camera frame into small 14 &times; 14 patches, producing 256 to 576 continuous visual tokens.</li>
   <li><strong>Multimodal Projector:</strong> A projection matrix or small MLP that maps visual tokens into the exact embedding dimension of the language model backbone.</li>
   <li><strong>Transformer Backbone:</strong> Self-attention layers compute cross-modal associations between the language instruction (e.g., <em>"pick up the red cube and lift it 15 cm"</em>) and the visual patch features.</li>
   <li><strong>Action Head:</strong> The output mechanism. Early VLAs (like RT-2) discretized joint angles into 256 textual tokens. Modern VLAs use <strong>Diffusion Heads</strong> or <strong>Flow-Matching Heads</strong> that output continuous floating-point vectors representing trajectories over time.</li>
 </ol>
 
-<h2>2.3 What is "Action Chunking" ($T=50$) and Why Is It Mandatory?</h2>
+<h2>2.3 What is "Action Chunking" (T = 50) and Why Is It Mandatory?</h2>
 <p>
 If a model predicts only <strong>one action per forward pass</strong> (single-step prediction), control collapses:
 </p>
@@ -388,7 +408,13 @@ If a model predicts only <strong>one action per forward pass</strong> (single-st
 </ul>
 <p>
 <strong>Action Chunking</strong> solves this by having the model output an entire future trajectory slice at once:
-$$\text{Action Chunk} \in \mathbb{R}^{T \times D} \quad \text{where } T = 50 \text{ steps}, D = 7 \text{ joint DOFs}$$
+</p>
+
+<div class="math-block">
+  <b>Action Chunk</b> &isin; &#8477;<sup><i>T</i> &times; <i>D</i></sup> &nbsp;&nbsp;&nbsp;&nbsp; (where <i>T</i> = 50 steps, <i>D</i> = 7 joint DOFs)
+</div>
+
+<p>
 At a 100 Hz control loop, 50 steps equals <strong>500 milliseconds of planned motion</strong>. This buys the robot a 500 ms buffer window, allowing the slow VLA model to compute the next chunk in the background without the arm stopping!
 </p>
 
@@ -430,30 +456,40 @@ Genesis-Kinetics uses the industry-standard Franka Emika Panda research arm. Und
 
 <h3>The Key Physical Variables:</h3>
 <ul>
-  <li><strong>Joint Position ($q \in \mathbb{R}^7$):</strong> The current angular position of each joint in radians ($-\pi$ to $+\pi$).</li>
-  <li><strong>Joint Velocity ($\dot{q} \in \mathbb{R}^7$):</strong> Rotational speed of each joint in radians per second ($\text{rad/s}$).</li>
-  <li><strong>Joint Acceleration ($\ddot{q} \in \mathbb{R}^7$):</strong> Rate of change of velocity ($\text{rad/s}^2$).</li>
-  <li><strong>Mechanical Jerk ($\dddot{q} \in \mathbb{R}^7$):</strong> Derivative of acceleration ($\text{rad/s}^3$). High jerk creates mechanical resonance, motor gear backlash wear, and causes grasped objects to slip from fingers.</li>
-  <li><strong>Joint Torque ($\tau \in \mathbb{R}^7$):</strong> Rotational effort exerted by electric brushless motors in Newton-meters ($\text{N}\cdot\text{m}$).</li>
+  <li><strong>Joint Position (<span class="math-var">q</span> &isin; &#8477;<sup>7</sup>):</strong> The current angular position of each joint in radians (&minus;&pi; to +&pi;).</li>
+  <li><strong>Joint Velocity (<span class="math-var">q̇</span> &isin; &#8477;<sup>7</sup>):</strong> Rotational speed of each joint in radians per second (rad/s).</li>
+  <li><strong>Joint Acceleration (<span class="math-var">q̈</span> &isin; &#8477;<sup>7</sup>):</strong> Rate of change of velocity (rad/s<sup>2</sup>).</li>
+  <li><strong>Mechanical Jerk (<span class="math-var">q⃛</span> &isin; &#8477;<sup>7</sup>):</strong> Derivative of acceleration (rad/s<sup>3</sup>). High jerk creates mechanical resonance, motor gear backlash wear, and causes grasped objects to slip from fingers.</li>
+  <li><strong>Joint Torque (&tau; &isin; &#8477;<sup>7</sup>):</strong> Rotational effort exerted by electric brushless motors in Newton-meters (N&middot;m).</li>
 </ul>
 
 <h2>3.3 How Actuation Works: Forward Dynamics & Gravity Compensation</h2>
 <p>
 Robots do not move by magic; they obey the Newton-Euler equations of motion:
-$$M(q)\ddot{q} + C(q, \dot{q})\dot{q} + G(q) = \tau_{\text{applied}} + \tau_{\text{ext}}$$
-Where:
 </p>
+
+<div class="math-block">
+  <i>M</i>(<i>q</i>)<i>q̈</i> + <i>C</i>(<i>q</i>, <i>q̇</i>)<i>q̇</i> + <i>G</i>(<i>q</i>) = &tau;<sub>applied</sub> + &tau;<sub>ext</sub>
+</div>
+
+<p>Where:</p>
 <ul>
-  <li>$M(q)$ is the <strong>Mass / Inertia Matrix</strong> (how heavy the robot feels at the current pose).</li>
-  <li>$C(q, \dot{q})$ is the <strong>Coriolis and Centrifugal force matrix</strong> (forces that push outward when rotating).</li>
-  <li>$G(q)$ is the <strong>Gravity Vector ($\tau_{\text{grav}}$)</strong>: The downward gravitational pull on every link. <em>If you command $\tau = 0$, the robot collapses into the floor.</em> Gravity compensation actively computes $G(q)$ and cancels it out so the arm floats weightlessly.</li>
+  <li><i>M</i>(<i>q</i>) is the <strong>Mass / Inertia Matrix</strong> (how heavy the robot feels at the current pose).</li>
+  <li><i>C</i>(<i>q</i>, <i>q̇</i>) is the <strong>Coriolis and Centrifugal force matrix</strong> (forces that push outward when rotating).</li>
+  <li><i>G</i>(<i>q</i>) is the <strong>Gravity Vector (&tau;<sub>grav</sub>)</strong>: The downward gravitational pull on every link. <em>If you command &tau; = 0, the robot collapses into the floor.</em> Gravity compensation actively computes <i>G</i>(<i>q</i>) and cancels it out so the arm floats weightlessly.</li>
 </ul>
 
 <h3>Closed-Loop PD Joint Impedance Control:</h3>
 <p>
 In Genesis World, we control joints using a Proportional-Derivative (PD) feedback loop:
-$$\tau_{\text{command}} = K_p \cdot (q_{\text{target}} - q_{\text{actual}}) + K_d \cdot (\dot{q}_{\text{target}} - \dot{q}_{\text{actual}}) + G(q)$$
-Where $K_p$ is joint stiffness (springiness) and $K_d$ is joint damping (friction/braking).
+</p>
+
+<div class="math-block">
+  &tau;<sub>command</sub> = <i>K</i><sub><i>p</i></sub> &middot; (<i>q</i><sub>target</sub> &minus; <i>q</i><sub>actual</sub>) + <i>K</i><sub><i>d</i></sub> &middot; (<i>q̇</i><sub>target</sub> &minus; <i>q̇</i><sub>actual</sub>) + &tau;<sub>grav</sub>
+</div>
+
+<p>
+Where <i>K</i><sub><i>p</i></sub> is joint stiffness (springiness) and <i>K</i><sub><i>d</i></sub> is joint damping (friction/braking).
 </p>
 
 ---
@@ -468,7 +504,7 @@ Where $K_p$ is joint stiffness (springiness) and $K_d$ is joint damping (frictio
   <div class="col">
     <h4>Failure Mode 1: The Synchronous Freeze</h4>
     <p>
-    Standard naive deployments run in a single process: Camera captures $\to$ Model runs for 150 ms (robot freezes in place) $\to$ Robot executes 500 ms chunk $\to$ Robot freezes again. This creates a stepped, stuttering motion that destroys task momentum.
+    Standard naive deployments run in a single process: Camera captures &rarr; Model runs for 150 ms (robot freezes in place) &rarr; Robot executes 500 ms chunk &rarr; Robot freezes again. This creates a stepped, stuttering motion that destroys task momentum.
     </p>
   </div>
   <div class="col">
@@ -488,12 +524,18 @@ Where $K_p$ is joint stiffness (springiness) and $K_d$ is joint damping (frictio
 
 <h3>1. Dynamic Elapsed-Step Chunk Truncation</h3>
 <p>
-When System 2 finishes generating an action chunk, time has passed! If camera capture happened at $t=1000\text{ ms}$, and inference finished at $t=1120\text{ ms}$, exactly $120\text{ ms}$ (12 steps at 100 Hz) are already obsolete.
+When System 2 finishes generating an action chunk, time has passed! If camera capture happened at <i>t</i> = 1000 ms, and inference finished at <i>t</i> = 1120 ms, exactly 120 ms (12 steps at 100 Hz) are already obsolete.
 </p>
 <p>
 <strong>Genesis-Kinetics inspects the timestamp:</strong>
-$$\text{elapsed\_steps} = \left\lfloor \frac{t_{\text{current}} - t_{\text{obs\_captured}}}{\Delta t} \right\rfloor = \left\lfloor \frac{0.120}{0.010} \right\rfloor = 12 \text{ steps}$$
-It immediately truncates steps $0 \dots 11$ and only streams the valid remaining future horizon ($12 \dots 49$).
+</p>
+
+<div class="math-block">
+  elapsed_steps = &lfloor; (<i>t</i><sub>current</sub> &minus; <i>t</i><sub>obs_captured</sub>) / &Delta;<i>t</i> &rfloor; = &lfloor; 0.120 / 0.010 &rfloor; = <b>12 steps</b>
+</div>
+
+<p>
+It immediately truncates steps 0 through 11 and only streams the valid remaining future horizon (12 through 49).
 </p>
 
 <h3>2. Exponential Recency Trajectory Ensembling</h3>
@@ -502,8 +544,14 @@ When a new chunk arrives mid-flight, System 1 is already executing the previous 
 </p>
 <p>
 Genesis-Kinetics blends the overlapping slice using exponential decay weights:
-$$q_{\text{blended}}[i] = (1 - w_i) \cdot q_{\text{active}}[i] + w_i \cdot q_{\text{new}}[i] \quad \text{where } w_i = 1 - e^{-\alpha (i + 1)}$$
-At step 0, $w_0 \approx 0$ (preserving the existing trajectory velocity). Over subsequent steps, $w_i \to 1.0$, smoothly transitioning into the fresh policy prediction without mechanical vibration.
+</p>
+
+<div class="math-block">
+  <i>q</i><sub>blended</sub>[<i>i</i>] = (1 &minus; <i>w</i><sub><i>i</i></sub>) &middot; <i>q</i><sub>active</sub>[<i>i</i>] + <i>w</i><sub><i>i</i></sub> &middot; <i>q</i><sub>new</sub>[<i>i</i>] &nbsp;&nbsp;&nbsp;&nbsp; where <i>w</i><sub><i>i</i></sub> = 1 &minus; <i>e</i><sup>&minus;&alpha;(<i>i</i> + 1)</sup>
+</div>
+
+<p>
+At step 0, <i>w</i><sub>0</sub> &asymp; 0 (preserving the existing trajectory velocity). Over subsequent steps, <i>w</i><sub><i>i</i></sub> &rarr; 1.0, smoothly transitioning into the fresh policy prediction without mechanical vibration.
 </p>
 
 <h3>3. Quintic Minimum-Jerk Damped Continuation</h3>
@@ -511,13 +559,21 @@ At step 0, $w_0 \approx 0$ (preserving the existing trajectory velocity). Over s
 If a severe latency spike occurs (+150 ms) and the action buffer hits zero, how should the robot stop?
 </p>
 <ul>
-  <li><strong>Naive Stop:</strong> Setting target velocity to 0 causes infinite acceleration and an immediate jerk spike ($111.85\text{ rad/s}^3$).</li>
-  <li><strong>Genesis-Kinetics Damped Stop:</strong> Solves a $5^{\text{th}}$-order polynomial trajectory that guarantees zero velocity and zero acceleration at the stopping point:
-  $$s(\tau) = 10\tau^3 - 15\tau^4 + 6\tau^5 \quad \text{where } \tau = \frac{t}{T_{\text{damp}}} \in [0, 1]$$
-  $$q(t) = q_0 + \dot{q}_0 \cdot T_{\text{damp}} \cdot \left[ \tau - \frac{10}{4}\tau^4 + \frac{15}{5}\tau^5 - \frac{6}{6}\tau^6 \right]$$
-  This gently brings joint velocities to rest over $T_{\text{damp}} = 0.2\text{s}$ while actively commanding gravity compensation torques to hold any grasped object securely in the air!
+  <li><strong>Naive Stop:</strong> Setting target velocity to 0 causes infinite acceleration and an immediate jerk spike (111.85 rad/s<sup>3</sup>).</li>
+  <li><strong>Genesis-Kinetics Damped Stop:</strong> Solves a 5<sup>th</sup>-order polynomial trajectory that guarantees zero velocity and zero acceleration at the stopping point:
   </li>
 </ul>
+
+<div class="math-block">
+  <i>s</i>(&tau;) = 10&tau;<sup>3</sup> &minus; 15&tau;<sup>4</sup> + 6&tau;<sup>5</sup> &nbsp;&nbsp;&nbsp;&nbsp; where &tau; = <i>t</i> / <i>T</i><sub>damp</sub> &isin; [0, 1]
+</div>
+<div class="math-block">
+  <i>q</i>(<i>t</i>) = <i>q</i><sub>0</sub> + <i>q̇</i><sub>0</sub> &middot; <i>T</i><sub>damp</sub> &middot; [ &tau; &minus; 2.5&tau;<sup>4</sup> + 3.0&tau;<sup>5</sup> &minus; &tau;<sup>6</sup> ]
+</div>
+
+<p>
+This gently brings joint velocities to rest over <i>T</i><sub>damp</sub> = 0.20 s while actively commanding gravity compensation torques to hold any grasped object securely in the air!
+</p>
 
 ---
 
@@ -553,7 +609,7 @@ class SharedActionRingBuffer:
 <h3>Mechanics of the SPSC Double-Buffer:</h3>
 <ul>
   <li><strong>Why Double-Buffering?</strong> Slot 0 and Slot 1 alternate. While System 1 (Consumer) is actively reading from Slot 0, System 2 (Producer) writes the next chunk into Slot 1. They never access the same memory slot simultaneously.</li>
-  <li><strong>Zero OS Mutexes:</strong> Traditional multi-threading uses locks (`threading.Lock()`, `sem_wait()`). Under Linux/macOS, taking a lock can force a context switch to the kernel (costing $10\text{–}50\,\mu\text{s}$). Our ring buffer updates an integer cursor in memory without any OS syscalls.</li>
+  <li><strong>Zero OS Mutexes:</strong> Traditional multi-threading uses locks (`threading.Lock()`, `sem_wait()`). Under Linux/macOS, taking a lock can force a context switch to the kernel (costing 10 to 50 &mu;s). Our ring buffer updates an integer cursor in memory without any OS syscalls.</li>
 </ul>
 
 <pre><code># vla_runtime/buffer.py (Produce / Consume methods)
@@ -649,8 +705,8 @@ tensor_dlpack = torch.from_dlpack(genesis_joint_array)
 
 <h3>Quantitative Microbenchmark Results (25,000 Cycles):</h3>
 <ul>
-  <li><strong>Copy-Based Latency:</strong> $3.368\,\mu\text{s}$ per tick | Heap Allocations: $33.38\text{ MB}$.</li>
-  <li><strong>Zero-Copy DLPack:</strong> $2.628\,\mu\text{s}$ per tick | Heap Allocations: $0.00\text{ MB}$.</li>
+  <li><strong>Copy-Based Latency:</strong> 3.368 &mu;s per tick | Heap Allocations: 33.38 MB.</li>
+  <li><strong>Zero-Copy DLPack:</strong> 2.628 &mu;s per tick | Heap Allocations: 0.00 MB.</li>
   <li><strong>Impact:</strong> A 22% reduction in memory pointer handover time and <strong>zero memory churn</strong>, preventing Python's Garbage Collector from triggering pauses during the 100 Hz control loop.</li>
 </ul>
 
@@ -718,19 +774,19 @@ Keep this two-page cheat sheet handy when reviewing robotics systems code or spe
       <td>Enables zero-copy tensor sharing without duplicating memory on RAM or VRAM.</td>
     </tr>
     <tr>
-      <td><strong>Action Chunk ($T=50$)</strong></td>
+      <td><strong>Action Chunk (T = 50)</strong></td>
       <td>VLA Control</td>
-      <td>A multidimensional tensor $[T, \text{DOF}]$ representing a sequence of planned future joint waypoints.</td>
+      <td>A multidimensional tensor [T, DOF] representing a sequence of planned future joint waypoints.</td>
       <td>Allows slow 10 Hz models to feed fast 100 Hz motor loops smoothly.</td>
     </tr>
     <tr>
-      <td><strong>Mechanical Jerk ($\dddot{q}$)</strong></td>
+      <td><strong>Mechanical Jerk (q⃛)</strong></td>
       <td>Dynamics</td>
-      <td>The third derivative of position with respect to time ($\text{rad/s}^3$). Rate of change of acceleration.</td>
+      <td>The third derivative of position with respect to time (rad/s<sup>3</sup>). Rate of change of acceleration.</td>
       <td>High jerk creates mechanical vibration, strips motor gears, and causes dropped payloads.</td>
     </tr>
     <tr>
-      <td><strong>Gravity Comp ($\tau_{\text{grav}}$)</strong></td>
+      <td><strong>Gravity Comp (&tau;<sub>grav</sub>)</strong></td>
       <td>Robotics Control</td>
       <td>The analytical vector of torques required to counteract gravitational pull on robot links.</td>
       <td>Without active gravity compensation, the robot arm collapses under its own weight.</td>
@@ -738,13 +794,13 @@ Keep this two-page cheat sheet handy when reviewing robotics systems code or spe
     <tr>
       <td><strong>Quintic Polynomial</strong></td>
       <td>Trajectory Math</td>
-      <td>A $5^{\text{th}}$-order polynomial $s(\tau) = 10\tau^3 - 15\tau^4 + 6\tau^5$ used for minimum-jerk motion profiles.</td>
+      <td>A 5<sup>th</sup>-order polynomial s(&tau;) = 10&tau;<sup>3</sup> &minus; 15&tau;<sup>4</sup> + 6&tau;<sup>5</sup> used for minimum-jerk motion profiles.</td>
       <td>Guarantees zero velocity and zero acceleration at the end of a stopping motion.</td>
     </tr>
     <tr>
       <td><strong>Tail Latency (P99)</strong></td>
       <td>Systems</td>
-      <td>The $99^{\text{th}}$ percentile response time of a service or model.</td>
+      <td>The 99<sup>th</sup> percentile response time of a service or model.</td>
       <td>Even if mean latency is 80 ms, a P99 spike of 250 ms causes action buffer starvation.</td>
     </tr>
     <tr>
@@ -768,7 +824,7 @@ Keep this two-page cheat sheet handy when reviewing robotics systems code or spe
     <tr>
       <td><strong>PD Impedance Control</strong></td>
       <td>Control Theory</td>
-      <td>$\tau = K_p(q^* - q) + K_d(\dot{q}^* - \dot{q})$. Proportional stiffness + Derivative damping.</td>
+      <td>&tau; = K<sub>p</sub>(q<sub>target</sub> &minus; q) + K<sub>d</sub>(q̇<sub>target</sub> &minus; q̇). Proportional stiffness + Derivative damping.</td>
       <td>Translates kinematic position targets into actual motor torque effort.</td>
     </tr>
     <tr>
@@ -799,7 +855,7 @@ def main():
     root_pdf_path = "/Users/aravindsundaresan/Genesis_AI/Genesis_Kinetics_Ready_Reckoner.pdf"
 
     # 1. Write HTML
-    print(f"Writing HTML handbook to {html_path}...")
+    print(f"Writing clean HTML handbook to {html_path}...")
     with open(html_path, "w", encoding="utf-8") as f:
         f.write(HTML_CONTENT)
 
@@ -822,7 +878,7 @@ def main():
         print(f"Error running wkhtmltopdf: {res.stderr}")
         sys.exit(res.returncode)
 
-    # 3. Create a symlink or copy at the root directory
+    # 3. Copy to root directory
     subprocess.run(["cp", pdf_path, root_pdf_path], check=True)
     pdf_size = os.path.getsize(pdf_path)
     print(f"SUCCESS: Generated {pdf_path} ({pdf_size / 1024:.1f} KB)")
