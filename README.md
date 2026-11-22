@@ -1,6 +1,6 @@
 # Genesis-Kinetics
 
-### *Asynchronous Disaggregated VLA Runtime & Closed-Loop Flight Recorder for Genesis World*
+### *Asynchronous Action-Chunk Runtime & Deterministic Flight Recorder for Genesis World*
 
 [![Genesis-Kinetics](https://img.shields.io/badge/Genesis--Kinetics-v0.1.0-blue.svg)]()
 [![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/downloads/)
@@ -10,26 +10,42 @@
 [![Control Frequency](https://img.shields.io/badge/System%201-100%20Hz-green.svg)]()
 [![Hardware Backend](https://img.shields.io/badge/Backend-Apple%20Metal%20%2F%20CUDA-purple.svg)]()
 
-**Genesis-Kinetics** is a production-grade reference runtime and real-time observability framework bridging large Vision-Language-Action (VLA) foundation models (OpenVLA, $\pi_0$, LeRobot) with high-frequency physics simulation in **Genesis World** and **Quadrants**.
+**Genesis-Kinetics** is an open-source experimental asynchronous action-chunk runtime and deterministic flight recorder for studying compute, scheduling, and network latency disturbances in **Genesis World** (1.4.7) physics simulation.
 
 ---
 
 ## 1. Why This Runtime Exists
 
-### The Industry Shift to Disaggregated System 1 / System 2
-Frontier embodied AI architectures are transitioning away from monolithic policies to hierarchical systems: large vision-language models planning high-level intent at 5–10 Hz, paired with agile on-device action heads executing trajectories at 100–500 Hz.
+### The Latency Vulnerability in Hierarchical VLA Control
+Frontier embodied AI architectures are increasingly adopting hierarchical control: large vision-language models planning high-level intent at 5–10 Hz, paired with agile on-device action heads executing trajectories at 100–500 Hz.
 
-### The 3 Core Problems Solved
+Recent open-source frameworks (such as LeRobot with Real-Time Chunking [RTC], OpenVLA, and $\pi_0$) have demonstrated the value of asynchronous inference and chunk buffering. However, robotics teams deploying hierarchical policies in dynamic simulation still face three critical systems challenges:
 
-| Problem | How Existing Open-Source Fails | How Our Solution Solves It |
-| :--- | :--- | :--- |
-| **The "Synchronous Freeze"** | Implementations (LeRobot, openpi, OpenVLA) run synchronously: the robot freezes, waits 100–150 ms for inference, executes a chunk, and repeats. This breaks dynamic tasks and causes jerky motions. | **Decoupled Dual Loops**: System 1 streams zero-copy control actions at 100 Hz continuously while System 2 updates action chunks asynchronously at 5–10 Hz in an independent OS process without GIL contention. |
-| **P99 Jitter & Trajectory Collapse** | If a VLM inference pass suffers a P99 compute or network spike (+150 ms), the robot exhausts its action chunk, drops torque, and drops objects or crashes under gravity. | **Temporal Trajectory Stitching & Damped Continuation**: When new chunks arrive mid-flight, they blend smoothly with the current trajectory; if a deadline is missed, the runtime executes inertial quintic velocity damping with gravity hold. |
-| **The Diagnostic Blindspot** | When a robot drops an object in simulation, engineers cannot tell if the failure was caused by a bad policy prediction or a 30 ms OS scheduler jitter that missed a motor deadline. | **Closed-Loop Flight Recorder**: Non-blocking microsecond telemetry captures camera ingestion, VLM prefill, queue delay, and joint torque impulses into compact `.tick` binary flight traces. |
+1. **Action Starvation Under Compute Stalls**: When an inference pass suffers an unexpected tail latency delay (due to network transfer, thermal throttling, or host scheduler contention), action chunk buffers deplete, causing robots to freeze or drop grasped payloads.
+2. **Discontinuity Across Chunk Boundaries**: Stitching discrete chunk arrivals into continuous motor commands requires smooth ensembling and deterministic inertial fallback when deadlines are missed.
+3. **The Causal Diagnostic Blindspot**: When a manipulation policy fails in simulation (e.g., dropping a cube), post-hoc analysis rarely reveals whether the failure stemmed from a flawed model prediction, joint velocity saturation, or a missed 10 ms control deadline caused by host OS scheduler jitter.
+
+Genesis-Kinetics provides an empirical fault-injection testbed and microsecond-level flight recorder to systematically benchmark and diagnose these failure modes inside Genesis World simulation.
 
 ---
 
-## 2. System Architecture
+## 2. Implementation Status & Scope Disclosures
+
+To ensure strict engineering transparency, the table below outlines what is currently implemented, simulated, and tested in this reference repository:
+
+| Component | Implementation Status | Technical Disclosures & Scope |
+| :--- | :--- | :--- |
+| **Policy Worker (`system2_worker.py`)** | Synthetic / Parameterized Policy | Generates 50-step action chunks at 5–10 Hz with configurable latency distributions (Gaussian nominal, log-normal jitter, and injected 150 ms stalls). Enables reproducible systems benchmarking independent of specific GPU weights. |
+| **Simulation Environment (`genesis_env.py`)** | Closed-Loop Genesis Simulation | Franka Emika Panda (7 arm DOFs + 2 gripper DOFs) performing tabletop manipulation in Genesis World 1.4.7 with Apple Metal acceleration (`gs.metal`). |
+| **Tabletop Task (`run_tabletop_pick.py`)** | Scripted Waypoint Trajectory (IK) | 5-phase pick-and-lift task (approach $\to$ descend $\to$ grasp $\to$ 14.8 cm lift $\to$ hold) used as an integration testbed to measure tracking distortion under injected compute stalls. |
+| **IPC Transport (`buffer.py`)** | POSIX Shared Memory (`multiprocessing.shared_memory`) | Double-buffered SPSC ring buffer with monotonic sequence counters. Non-blocking hot path (no OS mutexes or semaphores acquired in the 100 Hz control loop). |
+| **Tensor Interoperability (`benchmark_dlpack_zerocopy.py`)** | In-Process DLPack Memory Sharing | Direct zero-copy pointer sharing between Genesis C++/Metal memory structures and PyTorch tensors, eliminating intermediate NumPy heap allocations. |
+| **Telemetry & Flight Recorder (`telemetry/`)** | Non-blocking UDS Binary Recorder | Microsecond `.tick` binary records streaming to disk via `/tmp/rtm.sock`, capturing the full causal timeline from camera ingest to motor torque impulse. |
+| **Hardware Backends** | Tested on Apple Silicon Metal | Verified on macOS Apple Silicon Metal (`gs.metal`); architectural support for Linux CUDA (`gs.cuda`). |
+
+---
+
+## 3. System Architecture & Concurrency Model
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -41,7 +57,7 @@ Frontier embodied AI architectures are transitioning away from monolithic polici
 │                                                            ▼                │
 │                             Agile Action Head ──► Action Chunk (T = 50)     │
 └───────────────────────────────────────────────┬─────────────────────────────┘
-                                                │ Zero-Copy IPC (Lock-Free SPSC Ring Buffer)
+                                                │ Non-Blocking IPC (Double-Buffered SPSC POSIX shm)
                                                 │ Packet: {t_obs, seq_id, chunk[50, 7]}
                                                 ▼
 ┌─────────────────────────────────────────────────────────────────────────────┐
@@ -77,98 +93,137 @@ Frontier embodied AI architectures are transitioning away from monolithic polici
 ```
 
 > [!NOTE]
-> **IPC Concurrency Model & "Lockless" Guarantees**:
+> **IPC Concurrency Model & Guarantees**:
 > The inter-process communication layer between System 2 (5–10 Hz) and System 1 (100 Hz) uses a double-buffered Single-Producer Single-Consumer (SPSC) layout backed by POSIX shared memory (`multiprocessing.shared_memory`).
-> - **Zero OS Synchronization Contention**: Neither process ever acquires OS-level mutexes, semaphores, futexes, or file locks in the control loop. System 1 (100 Hz) is completely decoupled and never blocks waiting on a lock held by System 2.
-> - **Python Interpreter vs. Native Guarantees**: In this reference Python implementation, data integrity across the double-buffered slots is preserved via monotonic sequence counters (`write_cursor`, `read_cursor`) where the producer writes payload into an inactive slot before updating the cursor. For strict C++11 memory-model guarantees (`memory_order_release` / `memory_order_acquire` hardware memory barriers across arbitrary CPU cores), a native C++/Rust extension is the standard production deployment; our pure-Python implementation eliminates external C-compiler toolchain dependencies while upholding the non-blocking architecture.
+> - **Zero OS Mutex Contention**: Neither process acquires OS mutexes, semaphores, futexes, or file locks in the control loop. System 1 (100 Hz) is decoupled and never blocks waiting on a lock held by System 2.
+> - **Slot Ownership & Snapshot Copying**: The producer writes new chunk payloads into the inactive slot before updating the monotonic `write_cursor`. The consumer inspects the cursor, copies a local snapshot of the active slot into process-local memory, and verifies sequence continuity.
+> - **Python Interpreter vs. Native Guarantees**: In this pure-Python reference implementation, synchronization relies on atomic integer cursor assignments within the CPython runtime. For strict C++11 memory-model guarantees (`memory_order_release` / `memory_order_acquire` hardware memory fences across arbitrary CPU cores on multi-socket NUMA systems), a compiled C++/Rust extension is standard in production. Our pure-Python implementation provides an accessible, non-blocking baseline without requiring external C toolchain compilation.
 
 ---
 
-## 3. Empirical Benchmarks & Quantitative Findings
+## 4. Empirical Benchmarks & Quantitative Findings
 
-### Benchmark A: Counterfactual Stress-Test Under Injected P99 Latency (+150 ms)
-Simulating an adversarial P99 compute spike (+150 ms delay) during 100 Hz closed-loop control:
+### Benchmark A: Stress-Test Under Injected Latency Stalls (+150 ms)
+To evaluate controller robustness against tail-latency delays, we benchmark our asynchronous runtime against a standard synchronous chunk-execution baseline (where the controller halts and waits synchronously when the policy buffer empties). Both baselines operate with identical PD controller gains, gravity compensation, and Genesis physics parameters under an injected +150 ms compute stall workload:
 
 ```
 ================================================================================
  📊 COUNTERFACTUAL STRESS-TEST BENCHMARK RESULTS
 ================================================================================
-Configuration                       | Mean Jerk (rad/s³) | Peak Torque (N·m) | Miss Rate (%)
+Configuration                       | Mean Jerk (rad/s³) | Peak Torque (N·m) | Miss / Degraded Rate (%)
 --------------------------------------------------------------------------------
-Sync Baseline (Nominal)             |              63.79 |             29.80 |           4.4
-Sync Baseline (+150ms Spikes)       |             111.85 |             33.35 |          10.0
-Our Async Runtime (Nominal)         |              66.90 |             52.44 |           4.0
-Our Async Runtime (+150ms Spikes)   |              82.38 |             55.54 |           5.2
+Sync Baseline (Nominal)             |              63.79 |             29.80 |           4.4% (Miss)
+Sync Baseline (+150ms Spikes)       |             111.85 |             33.35 |          10.0% (Miss)
+Our Async Runtime (Nominal)         |              66.90 |             52.44 |           4.0% (Degraded)
+Our Async Runtime (+150ms Spikes)   |              82.38 |             55.54 |           5.2% (Degraded)
 ================================================================================
 ```
 
-* **26.3% Reduction in Mechanical Jerk**: When a +150 ms latency spike occurs, the synchronous baseline freezes in place, causing violent joint velocity discontinuities ($111.85\text{ rad/s}^3$). Our asynchronous runtime smoothly blends overlapping steps and falls back to quintic deceleration ($82.38\text{ rad/s}^3$).
-* **Elimination of Trajectory Stalls**: The synchronous baseline spent **10.0% of its run duration completely frozen**, while our asynchronous runtime maintained smooth control with only **5.2% degraded ticks**, smoothly recovering when fresh chunks arrived.
-* **Microsecond Flight Recording**: Captured 329 microsecond-precision `.tick` binary records correlating VLM compute latency directly with motor torque responses.
-
-> [!NOTE]
-> **Actuator Torque Dynamics & Damped Continuation**:
-> Under adversarial +150 ms spikes, our asynchronous runtime records higher peak torque ($55.54\text{ N}\cdot\text{m}$) than the synchronous baseline ($33.35\text{ N}\cdot\text{m}$). This is an intentional and principled robotics engineering trade-off:
-> - The **Synchronous Baseline** exhibits lower commanded torque during starvation because it abruptly halts target position updates—freezing in place or collapsing into unpowered compliance. While this minimizes instantaneous commanded effort, it introduces violent velocity discontinuities when delayed chunks arrive ($111.85\text{ rad/s}^3$ jerk) and causes the robot to drop grasped payloads under gravity.
-> - **Genesis-Kinetics** commits active dynamic braking torque ($52–55\text{ N}\cdot\text{m}$) via quintic polynomial deceleration while actively sustaining joint gravity compensation. Committing controlled actuator torque to preserve mechanical momentum continuity and prevent dropping objects is far superior to the kinematic shock of a "freeze-then-catch-up" collapse.
+#### Analysis & Control Trade-Offs:
+* **26.3% Reduction in Mechanical Jerk Under Stalls**: When an injected +150 ms stall occurs, the synchronous baseline freezes in place, causing violent joint velocity discontinuities ($111.85\text{ rad/s}^3$) upon resuming. Our asynchronous runtime smoothly blends overlapping chunk horizons and transitions into quintic velocity deceleration ($82.38\text{ rad/s}^3$).
+* **Metric Definitions**:
+  * *Sync Miss Rate (10.0%)*: The percentage of total control cycles where the robot was completely frozen waiting for delayed inference.
+  * *Async Degraded Rate (5.2%)*: The percentage of control cycles where the action buffer was starved and the controller operated in inertial quintic damping mode.
+* **Actuator Torque Dynamics & Damped Continuation**:
+  Under injected stalls, the asynchronous runtime commands higher peak torque ($55.54\text{ N}\cdot\text{m}$) than the synchronous baseline ($33.35\text{ N}\cdot\text{m}$). This is an intentional control engineering trade-off:
+  - The **Synchronous Baseline** exhibits lower instantaneous commanded torque during starvation because it abruptly halts target position updates. However, this introduces severe kinematic shock when delayed chunks arrive ($111.85\text{ rad/s}^3$ jerk) and causes payload slippage under gravity.
+  - **Genesis-Kinetics** commits dynamic braking torque via quintic polynomial deceleration while actively sustaining joint gravity compensation. Committing controlled actuator torque to preserve mechanical momentum continuity prevents payload loss. All measured torques remain comfortably within the Franka Emika Panda rated joint torque limits (Joints 1–4: 87 N·m, Joints 5–7: 12 N·m).
 
 ---
 
-### Benchmark B: Zero-Copy DLPack vs. Copy-Based IPC (25,000 Cycles)
-Benchmarking tensor handover performance between Genesis World physics and PyTorch policies:
+### Benchmark B: In-Process Zero-Copy DLPack vs. Copy-Based Tensor Handover (25,000 Cycles)
+Benchmarking in-process memory pointer sharing between Genesis World physics structures and PyTorch tensors:
 
 ```
 ====================================================================================
  📊 MICROBENCHMARK RESULTS: TENSOR HANDOVER PERFORMANCE
 ====================================================================================
-Pattern                          | Latency per Tick   | Bytes Copied   | Throughput    
+Pattern                          | Latency per Tick   | Bytes Copied   | Effective Throughput
 ------------------------------------------------------------------------------------
-Copy-Based (Standard LeRobot/VLA) |         3.368 µs     |      33.38 MB   |      396.4 MB/s
+Copy-Based (Standard Tensor Copy)|         3.368 µs     |      33.38 MB   |      396.4 MB/s
 Zero-Copy DLPack Streaming       |         2.628 µs     |       0.00 MB   |      508.0 MB/s
 ====================================================================================
 ```
 
-* **22.0% Latency Reduction**: Direct memory pointer projection avoids byte copying ($3.368\,\mu s \to 2.628\,\mu s$).
-* **Garbage Collection (GC) Immunity**: Eliminated **33.4 MB** of temporary Python heap allocations, preventing GC pauses from causing missed 100 Hz deadlines.
-* **Ultra-Low Budget Overhead**: At a 1000 Hz control frequency ($1000\,\mu s$ budget), zero-copy DLPack consumes only **0.26% of the loop budget**.
+* **22.0% Overhead Reduction**: Direct memory pointer projection via DLPack avoids intermediate memory copying ($3.368\,\mu\text{s} \to 2.628\,\mu\text{s}$, a saving of $0.740\,\mu\text{s}$ per tick).
+* **Heap Allocation Avoidance**: Eliminates **33.4 MB** of temporary Python heap allocations over 25,000 cycles, helping mitigate Python garbage collection pauses during high-frequency control loops.
+* **Budget Context**: At 100 Hz ($10,000\,\mu\text{s}$ budget), tensor handover consumes less than **0.03% of the control loop budget**.
 
 ---
 
 ### Benchmark C: Genesis World 3D Tabletop Rollout
-* **Franka Emika Panda Tabletop Scene**: Executed in Genesis World 1.4.7 natively accelerated by Apple Metal (`gs.metal`).
-* **5-Phase Rollout**: Pre-grasp approach $\to$ descend $\to$ grasp $\to$ 14.8 cm vertical lift $\to$ hold.
-* **Result**: 250 control ticks executed at 100 Hz with **0 missed deadlines**, rendered to `tabletop_cube_pick.mp4` (1.1 MB, 720x540, 50 FPS).
+* **Simulation Setup**: Franka Emika Panda tabletop pick-and-lift task executed in Genesis World 1.4.7 natively accelerated by Apple Metal (`gs.metal`).
+* **5-Phase Trajectory**: Pre-grasp approach $\to$ descend $\to$ grasp $\to$ 14.8 cm vertical lift $\to$ hold.
+* **Control Performance**: 250 control ticks executed at simulated 100 Hz (10 ms physics step) with 0 deadline misses, recorded to `tabletop_cube_pick.mp4` (1.1 MB, 720x540, 50 FPS).
 
 ---
 
-## 4. Interactive Flight Inspector & Web Dashboard
+## 5. Closed-Loop Flight Recorder & Causal Diagnostics
+
+The core contribution of Genesis-Kinetics is the **Closed-Loop Flight Recorder**—a microsecond-precision telemetry subsystem designed to resolve the diagnostic blindspot in embodied AI simulation.
+
+### Telemetry Packet Provenance Schema
+Every control cycle emits a structured binary `.tick` packet capturing complete end-to-end timing provenance:
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `tick_id` | `uint64` | Monotonic control loop step counter |
+| `t_obs` | `float64` | Observation capture timestamp (monotonic microseconds) |
+| `t_prefill_end` | `float64` | Vision prefill encoder completion timestamp |
+| `t_publish` | `float64` | Action chunk IPC publication timestamp |
+| `t_motor` | `float64` | Motor controller deadline execution timestamp |
+| `buffer_horizon` | `int32` | Number of unexecuted action steps remaining in the queue |
+| `controller_state`| `enum` | Controller mode (`NOMINAL`, `BLENDING`, `DAMPED_HOLD`, `BUFFER_EMPTY`) |
+| `torque_norm` | `float32` | Instantaneous L2 norm of commanded joint torques (N·m) |
+| `jerk` | `float32` | Instantaneous mechanical jerk (rad/s³) |
+
+### Isolating Causal Root Causes
+When a robot fails to grasp or lift an object in simulation, the flight recorder allows engineers to definitively separate algorithmic policy errors from systems and scheduling latency:
+
+```
+[SCENARIO: ROBOT DROPS PAYLOAD AT t = 1.84s]
+├── Without Flight Recorder:
+│   └── Engineer assumes policy network output an incorrect joint position.
+│       Action: Weeks spent fine-tuning VLA weights or collecting new demonstrations.
+│
+└── With Genesis-Kinetics Flight Recorder:
+    ├── Step 142 (t = 1.42s): System 2 begins VLM inference pass.
+    ├── Step 157 (t = 1.57s): Injected stall delays chunk arrival by +150 ms.
+    ├── Step 168 (t = 1.68s): Buffer horizon drops to 0. Controller enters DAMPED_HOLD.
+    └── Step 184 (t = 1.84s): Cube slips due to prolonged buffer starvation during lift.
+    └── Causal Conclusion: Systems latency failure (tail compute delay), NOT a policy defect.
+```
+
+---
+
+## 6. Interactive Flight Inspector & Web Dashboard
 
 ### 1. Interactive Terminal Rewinder
-Run the interactive scrubber to step forward/backward, jump directly to latency spikes, and analyze causal root causes:
+Run the interactive scrubber to step through rollout history, inspect latency milestones, and view causal state transitions:
 ```bash
 python3 experiments/counterfactual_inspector.py --auto
 ```
-* **Milestone Detection**: Automatically detects the exact timestamp of P99 compute stalls (e.g. $+362.1\text{ ms}$) and displays side-by-side action buffer depth, controller states, and torque metrics.
 
 ### 2. Standalone HTML Flight Dashboard
-Open the interactive web dashboard in any browser:
+Open the interactive flight recorder dashboard in any modern web browser:
 ```bash
 open telemetry/dashboard.html
 ```
+
 Features:
-* **Interactive Time-Scrubber Slider**: Scrub across all 250 ticks with real-time metric updates.
-* **Multi-Trace Waveforms**: Synchronized charts for Action Buffer Horizon and Joint Torque Norm.
-* **Causal Diagnostic Explainer**: Eliminates the "policy vs. latency" diagnostic blindspot for robotics teams.
+* **Embedded Video & Live Scrubber Sync**: Video playback and telemetry scrubbing are tied to a single unified `requestAnimationFrame` loop.
+* **Side-by-Side Synchronized Charts**: Real-time waveform unrolling for Action Buffer Horizon and Joint Torque Norm with glowing oscilloscope tracking heads.
+* **Diagnostic Milestone Cards**: Instant navigation to key simulation events (e.g., approach, grasp, stall injection, recovery).
 
 ---
 
-## 5. Repository Structure
+## 7. Repository Structure
 
 ```
 Genesis_AI/
 ├── vla_runtime/
 │   ├── types.py                     # Data contracts, ActionChunkPacket, ControllerState
-│   ├── buffer.py                    # Lockless double-buffered SPSC ring buffer (POSIX shm)
+│   ├── buffer.py                    # Non-blocking double-buffered SPSC ring buffer (POSIX shm)
 │   ├── trajectory.py                # Elapsed-step truncation, exponential ensembling & quintic dampener
 │   ├── disaggregated_serving.py     # Chunked vision prefill + zero-copy KV transfer + action head
 │   ├── system1_controller.py        # 100 Hz real-time controller loop paced by monotonic clock
@@ -181,7 +236,7 @@ Genesis_AI/
 │   ├── generate_dashboard.py        # Generates standalone interactive dashboard.html
 │   └── dashboard.html               # Interactive web flight recorder dashboard
 ├── experiments/
-│   ├── latency_profiles.py          # Nominal, network jitter, and adversarial P99 spike distributions
+│   ├── latency_profiles.py          # Nominal, network jitter, and adversarial stall distributions
 │   ├── counterfactual_benchmark.py  # Automated Sync vs. Async 4-way stress test
 │   ├── counterfactual_inspector.py  # Interactive terminal timeline scrubber & causal diagnoser
 │   ├── benchmark_dlpack_zerocopy.py # Zero-copy DLPack vs copy-based IPC microbenchmark
@@ -191,14 +246,14 @@ Genesis_AI/
 │   ├── test_vla_core.py             # Unit tests for ring buffer, ensembling, damping & Genesis
 │   ├── test_telemetry.py            # Socket streaming & .tick binary parsing tests
 │   └── test_disaggregated_serving.py # Chunked prefill & action head unit tests
-├── tabletop_cube_pick.mp4            # Rendered 3D visual rollout video
-├── README.md                        # Architecture & benchmark documentation
+├── tabletop_cube_pick.mp4            # Rendered 3D visual rollout video (1.1 MB)
+├── README.md                        # Rigorous systems documentation & disclosures
 └── .gitignore                       # Clean Git tracking configuration
 ```
 
 ---
 
-## 6. Quickstart Guide
+## 8. Quickstart Guide
 
 ### Prerequisites
 * Python 3.10+
@@ -206,23 +261,23 @@ Genesis_AI/
 * Genesis World (`pip install genesis-world`)
 * macOS (Metal) or Linux (CUDA)
 
-### 1. Run All Unit Tests
+### 1. Run Unit Tests
 ```bash
 python3 -m pytest tests/ -v
 # 7 passed in 12.5s
 ```
 
-### 2. Run Counterfactual Stress-Test Benchmark
+### 2. Run Stress-Test Benchmark
 ```bash
 python3 experiments/counterfactual_benchmark.py
 ```
 
-### 3. Run Zero-Copy DLPack Microbenchmark
+### 3. Run In-Process DLPack Microbenchmark
 ```bash
 python3 experiments/benchmark_dlpack_zerocopy.py
 ```
 
-### 4. Run Disaggregated VLA Serving Pipeline
+### 4. Run Disaggregated VLA Serving Demonstration
 ```bash
 python3 experiments/run_disaggregated_vla.py
 ```
